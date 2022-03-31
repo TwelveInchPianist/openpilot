@@ -94,7 +94,10 @@ class Controls:
     get_one_can(self.can_sock)
 
     self.CI, self.CP = get_car(self.can_sock, self.pm.sock['sendcan'])
-    self.CP.alternativeExperience = 0  # see panda/board/safety_declarations.h for allowed values
+
+    # see panda/board/safety_declarations.h for allowed values
+    self.disengage_on_accelerator = Params().get_bool("DisengageOnAccelerator")
+    self.CP.alternativeExperience = 1 if not self.disengage_on_accelerator else 0
 
     # read params
     self.is_metric = params.get_bool("IsMetric")
@@ -194,10 +197,13 @@ class Controls:
       self.events.add(EventName.controlsInitializing)
       return
 
-    # Disable on rising edge of gas or brake. Also disable on brake when speed > 0
-    if (CS.gasPressed and not self.CS_prev.gasPressed) or \
+    # Disable on rising edge of accelerator or brake. Also disable on brake when speed > 0
+    if (CS.gasPressed and not self.CS_prev.gasPressed and self.disengage_on_accelerator) or \
       (CS.brakePressed and (not self.CS_prev.brakePressed or not CS.standstill)):
       self.events.add(EventName.pedalPressed)
+
+    # if CS.gasPressed:
+    #   self.events.add(EventName.gasPressed)
 
     self.events.add_from_msg(CS.events)
     self.events.add_from_msg(self.sm['driverMonitoringState'].events)
@@ -493,7 +499,7 @@ class Controls:
     # Check which actuators can be enabled
     CC.latActive = self.active and not CS.steerFaultTemporary and not CS.steerFaultPermanent and \
                      CS.vEgo > self.CP.minSteerSpeed and not CS.standstill
-    CC.longActive = self.active
+    CC.longActive = self.active and not CS.gasPressed
 
     actuators = CC.actuators
     actuators.longControlState = self.LoC.long_control_state
