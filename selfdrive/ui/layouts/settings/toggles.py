@@ -144,6 +144,18 @@ class TogglesLayout(Widget):
       icon="warning.png",
     )
 
+    self._fcw_sensitivity_setting = multiple_button_item(
+      lambda: tr("Forward Collision Warning"),
+      lambda: tr("Default preserves existing FCW. Aggressive adds an experimental earlier chime for stable leads on nearly straight roads above 5 mph. " +
+                 "No braking changes. May miss threats or give false alerts; warning timing is unvalidated. " +
+                 "Existing urgent FCW remains enabled in both modes. Applies within a second; no reboot."),
+      buttons=[lambda: tr("Default"), lambda: tr("Aggressive")],
+      selected_index=int(self._params.get_bool("AggressiveFCW")),
+      button_width=300,
+      callback=self._set_fcw_sensitivity,
+      icon="warning.png",
+    )
+
     self._toggles = {}
     self._locked_toggles = set()
     for param, (title, desc, icon, needs_restart) in self._toggle_defs.items():
@@ -175,6 +187,7 @@ class TogglesLayout(Widget):
 
       if param == "LdwLowSpeed":
         self._toggles["LdwSensitivity"] = self._ldw_sensitivity_setting
+        self._toggles["AggressiveFCW"] = self._fcw_sensitivity_setting
 
       # insert longitudinal personality after NDOG toggle
       if param == "DisengageOnAccelerator":
@@ -245,6 +258,7 @@ class TogglesLayout(Widget):
     for param in self._toggle_defs:
       self._toggles[param].action_item.set_state(self._params.get_bool(param))
 
+    self._fcw_sensitivity_setting.action_item.set_selected_button(int(self._params.get_bool("AggressiveFCW")))
     self._ldw_sensitivity_setting.action_item.set_selected_button(
       sensitivity_index(self._params.get("LdwSensitivity", return_default=True)))
 
@@ -294,3 +308,6 @@ class TogglesLayout(Widget):
 
   def _set_ldw_sensitivity(self, button_index: int):
     self._params.put("LdwSensitivity", sensitivity_index(button_index), block=True)
+
+  def _set_fcw_sensitivity(self, button_index: int):
+    self._params.put_bool("AggressiveFCW", button_index == 1, block=True)

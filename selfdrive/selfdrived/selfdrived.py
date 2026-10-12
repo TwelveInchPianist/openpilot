@@ -17,6 +17,7 @@ from openpilot.common.gps import get_gps_location_service
 from openpilot.selfdrive.car.car_specific import CarSpecificEvents
 from openpilot.selfdrive.locationd.helpers import PoseCalibrator, Pose
 from openpilot.selfdrive.selfdrived.events import Events, ET
+from openpilot.selfdrive.controls.lib.early_fcw import EarlyFCWService
 from openpilot.selfdrive.selfdrived.helpers import ExcessiveActuationCheck
 from openpilot.selfdrive.selfdrived.state import StateMachine
 from openpilot.selfdrive.selfdrived.alertmanager import AlertManager, set_offroad_alert
@@ -169,6 +170,8 @@ class SelfdriveD(CruiseHelper):
       self.events.add(EventName.dashcamMode, static=True)
 
     self.events_sp = EventsSP()
+    self.early_fcw = EarlyFCWService()
+    self.early_fcw_car_time = -1.
     self.events_sp_prev = []
 
     self.mads = ModularAssistiveDrivingSystem(self)
@@ -455,6 +458,13 @@ class SelfdriveD(CruiseHelper):
     if (planner_fcw or model_fcw) and not self.CP.notCar:
       self.events.add(EventName.fcw)
 
+    # Independent warning-only advisory. Stock urgent FCW above is unchanged.
+    if not self.CP.notCar and self.early_fcw.update(
+        self.sm, CS, self.early_fcw_car_time, self.params, time.monotonic(),
+        planner_fcw or model_fcw, car.CarState.GearShifter.drive,
+        log.LiveCalibrationData.Status.calibrated, cloudlog):
+      self.events_sp.add(custom.OnroadEventSP.EventName.earlyForwardWarning)
+
     # GPS checks
     gps_ok = self.sm.recv_frame[self.gps_location_service] > 0 and (self.sm.frame - self.sm.recv_frame[self.gps_location_service]) * DT_CTRL < 2.0
     if not gps_ok and self.sm['livePose'].inputsOK and (self.distance_traveled > 1500):
@@ -488,6 +498,8 @@ class SelfdriveD(CruiseHelper):
   def data_sample(self):
     _car_state = messaging.recv_one(self.car_state_sock)
     CS = _car_state.carState if _car_state else self.CS_prev
+    if _car_state is not None:
+      self.early_fcw_car_time = _car_state.logMonoTime * 1e-9 if _car_state.valid else -1.
 
     self.sm.update(0)
 
@@ -651,3 +663,4 @@ def main():
 
 if __name__ == "__main__":
   main()
+

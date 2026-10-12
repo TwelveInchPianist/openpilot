@@ -495,6 +495,13 @@ class TunerUITests(unittest.TestCase):
     ui._toggles['LdwLowSpeed'].callback(True)
     self.assertTrue(values['LdwLowSpeed'])
     self.assertNotIn('OnroadCycleRequested', values)
+    self.assertEqual(ui._fcw_sensitivity_setting.action_item.selected_index, 0)
+    ui._fcw_sensitivity_setting.callback(1)
+    self.assertIs(values['AggressiveFCW'], True)
+    ui._fcw_sensitivity_setting.callback(0)
+    self.assertIs(values['AggressiveFCW'], False)
+    ui._fcw_sensitivity_setting.callback(99)
+    self.assertIs(values['AggressiveFCW'], False)
 
 
 class AllSteeringStatesTests(unittest.TestCase):

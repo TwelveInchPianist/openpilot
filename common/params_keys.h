@@ -60,6 +60,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     {"IsLdwEnabled", {PERSISTENT | BACKUP, BOOL, "1"}},
     {"LdwWhileSteering", {PERSISTENT | BACKUP, BOOL, "1"}},
     {"LdwLowSpeed", {PERSISTENT | BACKUP, BOOL, "1"}},
+    {"AggressiveFCW", {PERSISTENT | BACKUP, BOOL, "0"}},
     {"LdwSensitivity", {PERSISTENT | BACKUP, INT, "1"}},
     {"IsMetric", {PERSISTENT | BACKUP, BOOL}},
     {"IsOffroad", {CLEAR_ON_MANAGER_START, BOOL}},

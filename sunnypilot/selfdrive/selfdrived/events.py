@@ -88,6 +88,14 @@ class EventsSP(EventsBase):
 
 
 EVENTS_SP: dict[int, dict[str, Alert | AlertCallbackType]] = {
+  EventNameSP.earlyForwardWarning: {
+    ET.PERMANENT: Alert(
+      "Closing quickly",
+      "Check the vehicle ahead",
+      AlertStatus.userPrompt, AlertSize.mid,
+      Priority.LOW, VisualAlert.none, AudibleAlert.prompt, 2.),
+  },
+
   # sunnypilot
   EventNameSP.lkasEnable: {
     ET.ENABLE: EngagementAlert(AudibleAlert.engage),
@@ -244,3 +252,4 @@ EVENTS_SP: dict[int, dict[str, Alert | AlertCallbackType]] = {
       Priority.MID, VisualAlert.none, AudibleAlert.prompt, 3.),
   },
 }
+

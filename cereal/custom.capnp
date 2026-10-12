@@ -344,6 +344,7 @@ struct OnroadEventSP @0xda96579883444c35 {
     speedLimitChanged @21;
     speedLimitPending @22;
     e2eChime @23;
+    earlyForwardWarning @24;
   }
 }
 
@@ -487,3 +488,4 @@ struct CustomReserved18 @0xc86a3d38d13eb3ef {
 
 struct CustomReserved19 @0xa4f1eb3323f5f582 {
 }
+
