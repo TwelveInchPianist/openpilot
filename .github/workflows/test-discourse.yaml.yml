@@ -5,6 +5,8 @@ on:
 
 jobs:
   test-discourse-post:
+    # Upstream forum integration is not configured or intended for personal forks.
+    if: github.repository == 'sunnypilot/sunnypilot'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
