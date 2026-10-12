@@ -11,8 +11,8 @@ from openpilot.common.realtime import DT_MDL
 
 
 class AutoLaneChangeMode:
-  OFF = -1
-  NUDGE = 0  # default
+  OFF = -1  # default
+  NUDGE = 0
   NUDGELESS = 1
   HALF_SECOND = 2
   ONE_SECOND = 3

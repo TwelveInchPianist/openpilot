@@ -77,3 +77,14 @@ python3 -c 'from openpilot.common.params import Params; p = Params(); [p.put_boo
 ```
 
 This does not force them on at every boot. Sensitivity still defaults to Standard; all suppression and perception checks remain in place.
+
+## Lane-change default
+
+Auto Lane Change by Blinker defaults to Off (`AutoLaneChangeTimer = -1`), including nudge-triggered assisted lane changes. Stored choices are preserved. To turn it off on an existing installation while parked:
+
+```sh
+cd /data/openpilot
+python3 -c 'from openpilot.common.params import Params; Params().put("AutoLaneChangeTimer", -1, block=True)'
+```
+
+The three LDW switches still default on. Ordinary lane centering is unchanged.
