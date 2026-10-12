@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
-from cereal import car, custom
+import time
+
+from cereal import car, custom, log
 from openpilot.common.gps import get_gps_location_service
 from openpilot.common.params import Params
 from openpilot.common.realtime import Priority, config_realtime_process
 from openpilot.common.swaglog import cloudlog
 from openpilot.selfdrive.controls.lib.ldw import LaneDepartureWarning
+from openpilot.selfdrive.controls.lib.active_ldw import ActiveLaneDepartureWarning, update_active_ldw
 from openpilot.selfdrive.controls.lib.longitudinal_planner import LongitudinalPlanner
 import cereal.messaging as messaging
 
@@ -25,10 +28,13 @@ def main():
   ignore_services = ["liveMapDataSP", gps_location_service]
 
   ldw = LaneDepartureWarning()
+  active_ldw = ActiveLaneDepartureWarning()
+  active_ldw_enabled = False
+  next_ldw_param_read = 0.0
   longitudinal_planner = LongitudinalPlanner(CP, CP_SP)
   pm = messaging.PubMaster(['longitudinalPlan', 'driverAssistance', 'longitudinalPlanSP'])
   sm = messaging.SubMaster(['carControl', 'carState', 'controlsState', 'liveParameters', 'radarState', 'modelV2', 'selfdriveState',
-                            'liveMapDataSP', 'carStateSP', 'selfdriveStateSP', gps_location_service],
+                            'liveMapDataSP', 'carStateSP', 'selfdriveStateSP', 'liveCalibration', gps_location_service],
                            poll='modelV2', ignore_alive=ignore_services, ignore_avg_freq=ignore_services, ignore_valid=ignore_services)
 
   while True:
@@ -39,10 +45,17 @@ def main():
       longitudinal_planner.publish(sm, pm)
 
       ldw.update(sm.frame, sm['modelV2'], sm['carState'], sm['carControl'])
+      now = time.monotonic()
+      if now >= next_ldw_param_read:
+        active_ldw_enabled = params.get_bool("LdwWhileSteering") and params.get_bool("IsLdwEnabled")
+        next_ldw_param_read = now + 1.0
+      active_departure = update_active_ldw(active_ldw, sm, now, active_ldw_enabled,
+                                           log.LiveCalibrationData.Status.calibrated,
+                                           camera_now=time.clock_gettime(time.CLOCK_BOOTTIME))
       msg = messaging.new_message('driverAssistance')
       msg.valid = sm.all_checks(['carState', 'carControl', 'modelV2', 'liveParameters'])
-      msg.driverAssistance.leftLaneDeparture = ldw.left
-      msg.driverAssistance.rightLaneDeparture = ldw.right
+      msg.driverAssistance.leftLaneDeparture = ldw.left or active_departure.left
+      msg.driverAssistance.rightLaneDeparture = ldw.right or active_departure.right
       pm.send('driverAssistance', msg)
 
 

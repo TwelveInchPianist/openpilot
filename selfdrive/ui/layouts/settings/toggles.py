@@ -31,6 +31,13 @@ DESCRIPTIONS = {
     "Receive alerts to steer back into the lane when your vehicle drifts over a detected lane line " +
     "without a turn signal activated while driving over 31 mph (50 km/h)."
   ),
+  "LdwWhileSteering": tr_noop(
+    "Experimental audible departure warnings while steering assist is active, above 31 mph. " +
+    "Requires Enable Lane Departure Warnings. Predicts approaches to detected lane or shoulder lines; " +
+    "uses an outer road edge only when no credible line is available. Signals suppress that side. " +
+    "Unvalidated timing and approximate Odyssey width: warnings can be missed or false. " +
+    "Does not change steering. Low-confidence or stale detections cannot provide warnings."
+  ),
   "AlwaysOnDM": tr_noop("Enable driver monitoring even when sunnypilot is not engaged."),
   'RecordFront': tr_noop("Upload data from the driver facing camera and help improve the driver monitoring algorithm."),
   "IsMetric": tr_noop("Display speed in km/h instead of mph."),
@@ -67,6 +74,12 @@ class TogglesLayout(Widget):
       "IsLdwEnabled": (
         lambda: tr("Enable Lane Departure Warnings"),
         DESCRIPTIONS["IsLdwEnabled"],
+        "warning.png",
+        False,
+      ),
+      "LdwWhileSteering": (
+        lambda: tr("Lane Warnings During Steering (Experimental)"),
+        DESCRIPTIONS["LdwWhileSteering"],
         "warning.png",
         False,
       ),
