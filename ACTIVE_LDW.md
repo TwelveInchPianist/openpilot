@@ -5,7 +5,7 @@ Based on sunnypilot v2026.002.002, commit c440933a65fa2c669a9926c8112ae352d3600f
 Branch: `l` (lowercase L). Installer: https://installer.comma.ai/TwelveInchPianist/l
 The longer branch active-ldw-2026-002-002 is also maintained at this revision.
 
-Enable both Lane Departure Warnings and Predictive Lane Warnings (Experimental).
+Lane Departure Warnings, Predictive Lane Warnings (Experimental), and Low-Speed Lane Warnings default on for unset parameters. Existing stored choices are preserved; switches can still be turned off.
 The toggle is currently exposed in the comma 3/3X Python settings UI, not the comma four UI or sunnylink remote settings.
 The parameter is persistent and included in backups.
 
@@ -32,7 +32,7 @@ The user reported the prior revision's installer completed downloading/installin
 
 ## Remaining limitations
 
-Vehicle half-width is an approximate 1.0 m body envelope, not calibrated tire or full footprint tracking. Prediction assumes constant speed and current estimated curvature over the selected 0.5 / 0.8 / 1.1 second horizon. Speed must exceed 31 mph by default, or 2 mph when Low-Speed Lane Warnings is enabled; fresh valid data and calibration are required. Weak or stale detections silently suppress the added warning. Existing higher-priority alerts may supersede it.
+Vehicle half-width is an approximate 1.0 m body envelope, not calibrated tire or full footprint tracking. Prediction assumes constant speed and current estimated curvature over the selected 0.5 / 0.8 / 1.1 second horizon. Speed must exceed 2 mph with the default settings, or 31 mph when Low-Speed Lane Warnings is disabled; fresh valid data and calibration are required. Weak or stale detections silently suppress the added warning. Existing higher-priority alerts may supersede it.
 
 A long data absence or explicit detector reset can rearm while still straddling a boundary. Five-second suppression does not prove an unusually long lane change has finished. Latch retention after a boundary-identity change can suppress a genuinely new event temporarily. Unmarked shoulder crossings are not covered by default. Thresholds, false-alarm rate and warning timing need real-drive evaluation; no guarantee is made of a warning on every departure.
 
@@ -42,7 +42,7 @@ Steering, braking, panda safety and driver monitoring code are unchanged. Succes
 
 Settings > Toggles now includes **Low-Speed Lane Warnings (Experimental)** and **Lane Warning Sensitivity**.
 
-Low speed defaults off. When enabled, the added detector operates strictly above 2 mph (3.2 km/h), requiring both LDW master toggles, fresh data, valid calibration, and existing suppression checks. This also covers manual driving while the onroad perception/planning processes are running. Tight turns beyond the existing curvature limit remain unavailable.
+Low speed defaults on for unset parameters. When enabled, the added detector operates strictly above 2 mph (3.2 km/h), requiring both LDW master toggles, fresh data, valid calibration, and existing suppression checks. This also covers manual driving while the onroad perception/planning processes are running. Tight turns beyond the existing curvature limit remain unavailable.
 
 | Setting | Prediction horizon | Boundary margin |
 | --- | --- | --- |
@@ -66,3 +66,14 @@ The old internal key LdwWhileSteering is retained to preserve existing settings,
 Only one detector supplies alerts at a time. When predictive LDW is enabled and available, its output replaces stock LDW rather than being ORed with it. This prevents legacy logic from bypassing predictive suppression or re-triggering latched warnings. A runtime fault or host without BOOTTIME falls back to stock LDW, whose original speed/engagement limits apply. Invalid perception simply suppresses predictive output.
 
 Five added regression tests cover both steering states around 2 mph and at higher speeds, manual-mode planner output, detector selection/fallback, and latch continuity across steering-engagement transitions. All 58 synthetic tests pass. This is not a hardware or road-validation result.
+
+## Default-enabled settings
+
+All three LDW switches have registered defaults of true. Manager initializes only unset parameters on startup, so existing saved off values remain off. After updating and rebuilding, existing installations can enable all three once over SSH:
+
+```sh
+cd /data/openpilot
+python3 -c 'from openpilot.common.params import Params; p = Params(); [p.put_bool(k, True, block=True) for k in ("IsLdwEnabled", "LdwWhileSteering", "LdwLowSpeed")]'
+```
+
+This does not force them on at every boot. Sensitivity still defaults to Standard; all suppression and perception checks remain in place.
