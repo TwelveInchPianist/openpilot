@@ -34,7 +34,7 @@ DESCRIPTIONS = {
   "LdwWhileSteering": tr_noop(
     "Experimental audible departure warnings while steering assist is active, above 31 mph. " +
     "Requires Enable Lane Departure Warnings. Predicts approaches to detected lane or shoulder lines; " +
-    "uses an outer road edge only when no credible line is available. Signals suppress that side. " +
+    "Unmarked road-edge fallback is disabled. Either signal or an active lane change suppresses both sides, plus 5 seconds. " +
     "Unvalidated timing and approximate Odyssey width: warnings can be missed or false. " +
     "Does not change steering. Low-confidence or stale detections cannot provide warnings."
   ),

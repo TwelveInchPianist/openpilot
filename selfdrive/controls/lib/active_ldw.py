@@ -19,16 +19,18 @@ class Config:
   margin: float = 0.10
   min_approach: float = 0.05
   confirm_time: float = 0.15
-  signal_cooldown: float = 1.0
+  signal_cooldown: float = 5.0
   pulse_time: float = 0.30  # Existing event manager supplies the 3-second audible/display alert.
   rearm_clearance: float = 0.35
   rearm_time: float = 0.5
   max_age: float = 0.25
   max_gap: float = 0.20
+  latch_hold_time: float = 2.0
   min_lane_probability: float = 0.65
+  retain_lane_probability: float = 0.50
   max_lane_std: float = 0.30
   max_edge_std: float = 0.20
-  road_edge_fallback: bool = True
+  road_edge_fallback: bool = False
 
   def __post_init__(self):
     numeric = [v for v in self.__dict__.values() if type(v) is not bool]
@@ -66,6 +68,7 @@ class _Side:
   latched: bool = False
   last_near: float | None = None
   source: str | None = None
+  last_valid: float | None = None
 
 
 class ActiveLaneDepartureWarning:
@@ -81,13 +84,22 @@ class ActiveLaneDepartureWarning:
     self.last_now = None
     self.result = Result()
 
+  def _pause_side(self, i):
+    state = self.sides[i]
+    if (state.last_valid is None or self.last_now is None or
+        self.last_now - state.last_valid > self.config.latch_hold_time):
+      state = self.sides[i] = _Side()
+    # Cancel confirmation, clearance timer and pulse, but retain a recent latch.
+    state.candidate_since = state.clear_since = state.fired_at = None
+    return state
+
   def _invalid(self, reason):
-    # Do not carry a partial confirmation or stale warning into recovered data.
-    self.sides = [_Side(), _Side()]
+    for i in range(2):
+      self._pause_side(i)
     self.result = Result(reason=reason)
     return self.result
 
-  def _usable(self, b):
+  def _usable(self, b, retain_line=False):
     c = self.config
     if b is None or b.kind not in ("line", "edge"):
       return False
@@ -100,7 +112,8 @@ class ActiveLaneDepartureWarning:
     if not 0 <= b.probability <= 1 or b.std < 0:
       return False
     if b.kind == "line":
-      return b.probability >= c.min_lane_probability and b.std <= c.max_lane_std
+      threshold = c.retain_lane_probability if retain_line else c.min_lane_probability
+      return b.probability >= threshold and b.std <= c.max_lane_std
     return c.road_edge_fallback and b.std <= c.max_edge_std
 
   @staticmethod
@@ -136,7 +149,8 @@ class ActiveLaneDepartureWarning:
     return gaps[0], min(gaps)
 
   def update(self, *, now, frame_time, speed, curvature, lines, edges=(None, None),
-             left_signal=False, right_signal=False, enabled=False, lateral_active=False, valid=True):
+             left_signal=False, right_signal=False, lane_change_active=False,
+             enabled=False, lateral_active=False, valid=True):
     c = self.config
     if not all(math.isfinite(v) for v in (now, frame_time, speed, curvature)):
       return self._invalid("nonfinite input")
@@ -144,12 +158,12 @@ class ActiveLaneDepartureWarning:
       self.reset()
       self.last_now = now
       return self._invalid("clock discontinuity")
-    if self.last_now is not None and now - self.last_now > c.max_gap:
-      self.sides = [_Side(), _Side()]
+    gap = self.last_now is not None and now - self.last_now > c.max_gap
     self.last_now = now
-    for i, signal in enumerate((left_signal, right_signal)):
-      if signal:
-        self.last_signal[i] = now
+    if gap:
+      self._invalid("frame gap")
+    if left_signal or right_signal or lane_change_active:
+      self.last_signal = [now, now]
     if not enabled or not lateral_active:
       return self._invalid("inactive")
     age = now - frame_time
@@ -169,28 +183,32 @@ class ActiveLaneDepartureWarning:
     warnings, sources = [False, False], ["unavailable", "unavailable"]
     for i, side in enumerate((-1, 1)):
       if now - self.last_signal[i] < c.signal_cooldown:
-        self.sides[i] = _Side()
+        self._pause_side(i)
         sources[i] = "signal suppressed"
         continue
-      candidates = [b for b in (lines[i], edges[i]) if self._usable(b)]
+      state = self.sides[i]
+      if state.last_valid is not None and now - state.last_valid > c.latch_hold_time:
+        state = self.sides[i] = _Side()
+      candidates = [b for b in (lines[i], edges[i]) if self._usable(b, state.source == "line")]
       # A credible lane/shoulder stripe takes precedence over the outer road edge.
       if not candidates:
-        self.sides[i] = _Side()
+        self._pause_side(i)
         continue
       boundary = candidates[0]
       near = self._interpolate(boundary, 0.0)
       if near is None or not -0.25 <= side * (near[0] + c.camera_offset) <= 6.0:
-        self.sides[i] = _Side()
+        self._pause_side(i)
         continue
       clearance = self._clearances(boundary, side, speed, curvature, age)
       if clearance is None:
-        self.sides[i] = _Side()
+        self._pause_side(i)
         continue
       current, minimum = clearance
       sources[i] = boundary.kind
       state = self.sides[i]
       if state.source != boundary.kind or (state.last_near is not None and abs(near[0] - state.last_near) > 0.7):
-        state = self.sides[i] = _Side()
+        state = self._pause_side(i)
+      state.last_valid = now
       state.last_near, state.source = near[0], boundary.kind
 
       risk = current <= 0.0 or (minimum <= c.margin and current - minimum >= c.min_approach)
@@ -250,4 +268,5 @@ def update_active_ldw(detector, sm, now, enabled, calibrated_status, camera_now=
                          lines=(boundary_from_model(model, 1), boundary_from_model(model, 2)),
                          edges=(boundary_from_model(model, 0, True), boundary_from_model(model, 1, True)),
                          left_signal=cs.leftBlinker, right_signal=cs.rightBlinker,
+                         lane_change_active=model.meta.laneChangeState != 0,
                          enabled=enabled, lateral_active=cc.latActive, valid=valid)

@@ -7,7 +7,7 @@ from openpilot.common.params import Params
 from openpilot.common.realtime import Priority, config_realtime_process
 from openpilot.common.swaglog import cloudlog
 from openpilot.selfdrive.controls.lib.ldw import LaneDepartureWarning
-from openpilot.selfdrive.controls.lib.active_ldw import ActiveLaneDepartureWarning, update_active_ldw
+from openpilot.selfdrive.controls.lib.active_ldw import ActiveLaneDepartureWarning, Result, update_active_ldw
 from openpilot.selfdrive.controls.lib.longitudinal_planner import LongitudinalPlanner
 import cereal.messaging as messaging
 
@@ -30,6 +30,7 @@ def main():
   ldw = LaneDepartureWarning()
   active_ldw = ActiveLaneDepartureWarning()
   active_ldw_enabled = False
+  active_ldw_faulted = False
   next_ldw_param_read = 0.0
   longitudinal_planner = LongitudinalPlanner(CP, CP_SP)
   pm = messaging.PubMaster(['longitudinalPlan', 'driverAssistance', 'longitudinalPlanSP'])
@@ -45,13 +46,26 @@ def main():
       longitudinal_planner.publish(sm, pm)
 
       ldw.update(sm.frame, sm['modelV2'], sm['carState'], sm['carControl'])
-      now = time.monotonic()
-      if now >= next_ldw_param_read:
-        active_ldw_enabled = params.get_bool("LdwWhileSteering") and params.get_bool("IsLdwEnabled")
-        next_ldw_param_read = now + 1.0
-      active_departure = update_active_ldw(active_ldw, sm, now, active_ldw_enabled,
-                                           log.LiveCalibrationData.Status.calibrated,
-                                           camera_now=time.clock_gettime(time.CLOCK_BOOTTIME))
+      active_departure = Result()
+      if not active_ldw_faulted:
+        try:
+          now = time.monotonic()
+          if now >= next_ldw_param_read:
+            active_ldw_enabled = params.get_bool("LdwWhileSteering") and params.get_bool("IsLdwEnabled")
+            next_ldw_param_read = now + 1.0
+          if active_ldw_enabled:
+            # Do not silently mix MONOTONIC with BOOTTIME on unsupported hosts.
+            if hasattr(time, "CLOCK_BOOTTIME"):
+              active_departure = update_active_ldw(active_ldw, sm, now, True,
+                                                   log.LiveCalibrationData.Status.calibrated,
+                                                   camera_now=time.clock_gettime(time.CLOCK_BOOTTIME))
+          else:
+            active_ldw.reset()
+        except Exception:
+          # An advisory fault must not terminate longitudinal planning. Log once
+          # and disable the added detector until this process restarts.
+          active_ldw_faulted = True
+          cloudlog.exception("Active LDW disabled until restart after exception")
       msg = messaging.new_message('driverAssistance')
       msg.valid = sm.all_checks(['carState', 'carControl', 'modelV2', 'liveParameters'])
       msg.driverAssistance.leftLaneDeparture = ldw.left or active_departure.left
