@@ -113,8 +113,8 @@ class BehaviourTests(unittest.TestCase):
   def test_hazards_suppress_both_sides(self):
     self.assertFalse(any(r.left or r.right for r in self.run_frames(curvature=.008, left_signal=True, right_signal=True)))
 
-  def test_disabled_and_manual_mode_do_not_add_warning(self):
-    for options in ({'enabled': False}, {'lateral_active': False}):
+  def test_disabled_does_not_add_warning(self):
+    for options in ({'enabled': False},):
       self.assertFalse(any(r.left or r.right for r in self.run_frames(curvature=.008, **options)))
 
   def test_speed_gate(self):
@@ -303,7 +303,7 @@ class AdapterTests(unittest.TestCase):
     self.assertIsNone(ldw.boundary_from_model(NS(), 1))
     self.assertIsNone(ldw.boundary_from_model(make_sm()['modelV2'], 0, True))
 
-  def run_planner(self, fault=False, clock=True, enabled=True, low_speed=False, speed=30, sensitivity=1, curvature=.008):
+  def run_planner(self, fault=False, clock=True, enabled=True, low_speed=False, speed=30, sensitivity=1, curvature=.008, lateral_active=True, legacy_warning=False):
     # Execute the actual patched main, replacing only external processes and native imports.
     class StopLoop(Exception): pass
     sm, sent, errors, calls, planned = make_sm(), [], [], [], []
@@ -312,6 +312,7 @@ class AdapterTests(unittest.TestCase):
       if fault: raise RuntimeError('injected detector fault')
       return ldw.update_active_ldw(*args, **kwargs)
     sm['selfdriveStateSP'] = NS(buttonsReleaseToggle=0)
+    sm['carControl'].latActive = lateral_active
     sm['carState'].vEgo = speed
     sm['controlsState'].curvature = curvature
     sm.frame, sm.updated = 0, {'modelV2': True}
@@ -338,6 +339,11 @@ class AdapterTests(unittest.TestCase):
     legacy = {'log': NS(Desire=NS(laneChangeLeft=3, laneChangeRight=4)), 'DT_CTRL': .01,
               'CV': NS(MPH_TO_MS=.44704)}
     exec(compile(tree, '<legacy ldw>', 'exec'), legacy)
+    if legacy_warning:
+      class AlwaysWarn:
+        left, right = True, True
+        def update(self, *args): pass
+      legacy['LaneDepartureWarning'] = AlwaysWarn
     env = dict(time=NS(monotonic=lambda: 100+sm.frame*.05, CLOCK_BOOTTIME=7,
                        clock_gettime=lambda clock: 100+sm.frame*.05), car=NS(CarParams=object),
                custom=NS(CarParamsSP=object), log=NS(LiveCalibrationData=NS(Status=NS(calibrated=1))),
@@ -489,6 +495,40 @@ class TunerUITests(unittest.TestCase):
     ui._toggles['LdwLowSpeed'].callback(True)
     self.assertTrue(values['LdwLowSpeed'])
     self.assertNotIn('OnroadCycleRequested', values)
+
+
+class AllSteeringStatesTests(unittest.TestCase):
+  setUp = BehaviourTests.setUp
+  run_frames = BehaviourTests.run_frames
+  run_planner = AdapterTests.run_planner
+
+  def test_above_two_mph_in_both_steering_states(self):
+    for lateral in (False, True):
+      for mph in (0, 2, 2.1, 10, 30, 60):
+        self.detector = ldw.ActiveLaneDepartureWarning(ldw.config_from_settings(True))
+        frames = self.run_frames(20, speed=mph*.44704, lateral_active=lateral,
+                                 lines=(boundary(-2.8), boundary(.9)))
+        self.assertEqual(any(r.right for r in frames), mph > 2)
+
+  def test_planner_manual_mode_low_speed_warning(self):
+    sent, errors, calls = self.run_planner(low_speed=True, speed=25*.44704, curvature=.025, lateral_active=False)
+    self.assertFalse(errors)
+    self.assertTrue(any(m.driverAssistance.rightLaneDeparture for m in sent[20:]))
+
+  def test_stock_does_not_bypass_predictive_suppression(self):
+    sent, errors, calls = self.run_planner(speed=0, lateral_active=False, legacy_warning=True)
+    self.assertFalse(errors)
+    self.assertFalse(any(m.driverAssistance.leftLaneDeparture or m.driverAssistance.rightLaneDeparture for m in sent))
+
+  def test_stock_fallback_when_predictive_disabled_or_faulted(self):
+    for options in ({'enabled': False}, {'fault': True}, {'clock': False}):
+      sent, errors, calls = self.run_planner(legacy_warning=True, **options)
+      self.assertTrue(all(m.driverAssistance.leftLaneDeparture and m.driverAssistance.rightLaneDeparture for m in sent))
+
+  def test_steering_transition_does_not_rearm_latch(self):
+    self.run_frames(80, curvature=.008)
+    self.assertFalse(any(r.right for r in self.run_frames(20, curvature=.008, lateral_active=False)))
+    self.assertFalse(any(r.right for r in self.run_frames(20, curvature=.008, lateral_active=True)))
 
 
 if __name__ == '__main__':

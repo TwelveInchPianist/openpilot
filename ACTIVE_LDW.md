@@ -1,11 +1,11 @@
-# Experimental lane warnings during active steering
+# Experimental lane warnings with steering assistance on or off
 
 Based on sunnypilot v2026.002.002, commit c440933a65fa2c669a9926c8112ae352d3600f07.
 
 Branch: `l` (lowercase L). Installer: https://installer.comma.ai/TwelveInchPianist/l
 The longer branch active-ldw-2026-002-002 is also maintained at this revision.
 
-Enable both Lane Departure Warnings and Lane Warnings During Steering (Experimental).
+Enable both Lane Departure Warnings and Predictive Lane Warnings (Experimental).
 The toggle is currently exposed in the comma 3/3X Python settings UI, not the comma four UI or sunnylink remote settings.
 The parameter is persistent and included in backups.
 
@@ -15,11 +15,11 @@ The parameter is persistent and included in backups.
 - A fired latch survives brief invalid inputs, confidence dropouts, speed/lateral-active interruptions and boundary source changes. Partial confirmation, active output pulses and clearance timers are cancelled immediately. State expires after two seconds without a usable observation on that side. Otherwise rearming requires 0.35 m predicted clearance for 0.5 seconds.
 - Lane probability enters at 0.65 and can be retained down to 0.50. Boundary geometry and standard deviation checks still apply.
 - Unmarked road-edge fallback is disabled by default pending real-data evaluation of roadEdgeStds. There is no new UI setting enabling it. Marked shoulder lines remain eligible.
-- Runtime exceptions in the added detector/parameter/clock block are logged once and disable the addition until planner restart. Longitudinal planning and stock LDW continue. The added detector is not called with its toggle off. Hosts lacking CLOCK_BOOTTIME skip the addition instead of mixing clock domains.
+- Runtime exceptions in the added detector/parameter/clock block are logged once and disable the addition until planner restart. Longitudinal planning continues and stock LDW is selected as fallback. The added detector is not called with its toggle off. Hosts lacking CLOCK_BOOTTIME skip the addition instead of mixing clock domains.
 
 ## Validation
 
-53 synthetic tests pass. Two added regression tests reproduced signalled lane-change label-switch alerts and repeated alerts following confidence dropouts on the previous code, and now pass.
+58 synthetic tests pass. Two added regression tests reproduced signalled lane-change label-switch alerts and repeated alerts following confidence dropouts on the previous code, and now pass.
 Tests include the actual planner main with external/native dependencies stubbed, exception injection, absent BOOTTIME, disabled feature, lane-change suppression, confidence hysteresis, latch retention/expiry and source transitions.
 
 From repository root, run:
@@ -42,7 +42,7 @@ Steering, braking, panda safety and driver monitoring code are unchanged. Succes
 
 Settings > Toggles now includes **Low-Speed Lane Warnings (Experimental)** and **Lane Warning Sensitivity**.
 
-Low speed defaults off. When enabled, the added detector operates strictly above 2 mph (3.2 km/h), still requiring active lateral steering, both LDW master toggles, fresh data, valid calibration, and existing suppression checks. This does not extend stock manual-driving LDW. Tight turns beyond the existing curvature limit remain unavailable.
+Low speed defaults off. When enabled, the added detector operates strictly above 2 mph (3.2 km/h), requiring both LDW master toggles, fresh data, valid calibration, and existing suppression checks. This also covers manual driving while the onroad perception/planning processes are running. Tight turns beyond the existing curvature limit remain unavailable.
 
 | Setting | Prediction horizon | Boundary margin |
 | --- | --- | --- |
@@ -57,3 +57,12 @@ Settings persist and are backed up. The planner polls them every second; changin
 Tests cover speed thresholds (including standstill and exactly 2 mph), profile timing order, default equivalence, latch preservation, live planner polling, and actual settings-layout construction/callbacks with rendering dependencies stubbed. Native UI rendering and hardware performance have not been validated here.
 
 The first update introducing these controls requires rebuilding native Params bindings and restarting. Subsequent in-car adjustments do not.
+
+## Steering-independent operation
+
+Predictive Lane Warnings now runs with lateral steering assistance on or off. Enable Enable Lane Departure Warnings, Predictive Lane Warnings, and Low-Speed Lane Warnings for detection strictly above 2 mph. Low-Speed remains an explicit stored setting; turning it off restores the 31 mph threshold. Sensitivity remains adjustable in-car.
+
+The old internal key LdwWhileSteering is retained to preserve existing settings, despite the new UI name.
+Only one detector supplies alerts at a time. When predictive LDW is enabled and available, its output replaces stock LDW rather than being ORed with it. This prevents legacy logic from bypassing predictive suppression or re-triggering latched warnings. A runtime fault or host without BOOTTIME falls back to stock LDW, whose original speed/engagement limits apply. Invalid perception simply suppresses predictive output.
+
+Five added regression tests cover both steering states around 2 mph and at higher speeds, manual-mode planner output, detector selection/fallback, and latch continuity across steering-engagement transitions. All 58 synthetic tests pass. This is not a hardware or road-validation result.

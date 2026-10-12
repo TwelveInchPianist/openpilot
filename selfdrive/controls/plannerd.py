@@ -70,8 +70,11 @@ def main():
           cloudlog.exception("Active LDW disabled until restart after exception")
       msg = messaging.new_message('driverAssistance')
       msg.valid = sm.all_checks(['carState', 'carControl', 'modelV2', 'liveParameters'])
-      msg.driverAssistance.leftLaneDeparture = ldw.left or active_departure.left
-      msg.driverAssistance.rightLaneDeparture = ldw.right or active_departure.right
+      # Use one detector at a time: stock manual-driving LDW must not bypass
+      # predictive suppression or retrigger an already-latched departure.
+      use_predictive_ldw = active_ldw_enabled and not active_ldw_faulted and hasattr(time, "CLOCK_BOOTTIME")
+      msg.driverAssistance.leftLaneDeparture = active_departure.left if use_predictive_ldw else ldw.left
+      msg.driverAssistance.rightLaneDeparture = active_departure.right if use_predictive_ldw else ldw.right
       pm.send('driverAssistance', msg)
 
 

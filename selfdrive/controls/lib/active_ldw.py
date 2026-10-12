@@ -1,4 +1,4 @@
-"""Experimental advisory LDW during lateral control; no actuator commands.
+"""Experimental advisory LDW independent of lateral control; no actuator commands.
 
 Coordinates follow modelV2/controlsState: x forward, y and curvature right-positive.
 The envelope is a configurable body-width proxy, not calibrated tire tracking.
@@ -189,7 +189,8 @@ class ActiveLaneDepartureWarning:
       self._invalid("frame gap")
     if left_signal or right_signal or lane_change_active:
       self.last_signal = [now, now]
-    if not enabled or not lateral_active:
+    # Lateral engagement is deliberately not an eligibility gate.
+    if not enabled:
       return self._invalid("inactive")
     age = now - frame_time
     if not valid or not -0.005 <= age <= c.max_age:

@@ -30,17 +30,17 @@ DESCRIPTIONS = {
   ),
   "IsLdwEnabled": tr_noop(
     "Receive alerts to steer back into the lane when your vehicle drifts over a detected lane line " +
-    "without a turn signal activated while driving over 31 mph (50 km/h)."
+    "without a turn signal activated. Stock warnings operate above 31 mph (50 km/h); enable Predictive Lane Warnings and Low-Speed Lane Warnings below for coverage above 2 mph."
   ),
   "LdwWhileSteering": tr_noop(
-    "Experimental audible departure warnings while steering assist is active. Normally above 31 mph; the low-speed option lowers this to 2 mph. " +
+    "Experimental audible departure warnings with steering assistance on or off. Normally above 31 mph; the low-speed option lowers this to 2 mph. " +
     "Requires Enable Lane Departure Warnings. Predicts approaches to detected lane or shoulder lines; " +
     "Unmarked road-edge fallback is disabled. Either signal or an active lane change suppresses both sides, plus 5 seconds. " +
     "Unvalidated timing and approximate Odyssey width: warnings can be missed or false. " +
     "Does not change steering. Low-confidence or stale detections cannot provide warnings."
   ),
   "LdwLowSpeed": tr_noop(
-    "Extend the added warnings during active steering assistance to speeds above 2 mph (3.2 km/h). " +
+    "Enable predictive warnings above 2 mph (3.2 km/h), whether steering assistance is on or off. " +
     "Requires both lane-warning toggles above. No warnings at standstill. " +
     "Parking areas and intersections can cause false alerts; tight turns may be outside the prediction range."
   ),
@@ -84,7 +84,7 @@ class TogglesLayout(Widget):
         False,
       ),
       "LdwWhileSteering": (
-        lambda: tr("Lane Warnings During Steering (Experimental)"),
+        lambda: tr("Predictive Lane Warnings (Experimental)"),
         DESCRIPTIONS["LdwWhileSteering"],
         "warning.png",
         False,
@@ -133,7 +133,7 @@ class TogglesLayout(Widget):
 
     self._ldw_sensitivity_setting = multiple_button_item(
       lambda: tr("Lane Warning Sensitivity"),
-      lambda: tr("Applies to warnings during active steering assistance. Later: 0.5 s look-ahead / 5 cm margin. " +
+      lambda: tr("Applies to predictive warnings with steering assistance on or off. Later: 0.5 s look-ahead / 5 cm margin. " +
                  "Standard: 0.8 s / 10 cm. Earlier: 1.1 s / 20 cm; may produce more false alerts. " +
                  "These are prediction settings, not guaranteed warning lead times. " +
                  "Signal suppression and confidence checks are unchanged. Applies within a second; no reboot."),
