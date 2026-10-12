@@ -42,6 +42,21 @@ class Config:
       raise ValueError("invalid confirmation or rearm thresholds")
 
 
+# Later / Standard / Earlier. Confirmation and confidence gates stay unchanged.
+SENSITIVITY_PROFILES = ((0.5, 0.05), (0.8, 0.10), (1.1, 0.20))
+
+
+def sensitivity_index(value):
+  # Params returns an int; reject malformed/out-of-range values to Standard.
+  return value if type(value) is int and 0 <= value < len(SENSITIVITY_PROFILES) else 1
+
+
+def config_from_settings(low_speed=False, sensitivity=1):
+  horizon, margin = SENSITIVITY_PROFILES[sensitivity_index(sensitivity)]
+  return Config(min_speed=(2.0 if low_speed else 31.0) * 0.44704,
+                horizon=horizon, margin=margin)
+
+
 @dataclass(frozen=True)
 class Boundary:
   x: tuple[float, ...]
@@ -75,6 +90,16 @@ class ActiveLaneDepartureWarning:
   def __init__(self, config: Config | None = None):
     self.config = config or Config()
     self.reset()
+
+  def configure(self, config):
+    if config == self.config:
+      return
+    self.config = config
+    # Preserve fired latches, signal cooldowns and observation history when tuning.
+    # Restart partial confirmation/rearm timers; never replay an interrupted pulse.
+    for state in self.sides:
+      state.candidate_since = state.clear_since = state.fired_at = None
+    self.result = Result(reason="settings changed")
 
   def reset(self):
     self.sides = [_Side(), _Side()]

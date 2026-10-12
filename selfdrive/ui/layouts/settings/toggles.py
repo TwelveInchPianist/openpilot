@@ -1,5 +1,6 @@
 from cereal import log
 from openpilot.common.params import Params, UnknownKeyName
+from openpilot.selfdrive.controls.lib.active_ldw import sensitivity_index
 from openpilot.system.ui.widgets import Widget
 from openpilot.system.ui.widgets.list_view import multiple_button_item, toggle_item
 from openpilot.system.ui.widgets.scroller_tici import Scroller
@@ -32,11 +33,16 @@ DESCRIPTIONS = {
     "without a turn signal activated while driving over 31 mph (50 km/h)."
   ),
   "LdwWhileSteering": tr_noop(
-    "Experimental audible departure warnings while steering assist is active, above 31 mph. " +
+    "Experimental audible departure warnings while steering assist is active. Normally above 31 mph; the low-speed option lowers this to 2 mph. " +
     "Requires Enable Lane Departure Warnings. Predicts approaches to detected lane or shoulder lines; " +
     "Unmarked road-edge fallback is disabled. Either signal or an active lane change suppresses both sides, plus 5 seconds. " +
     "Unvalidated timing and approximate Odyssey width: warnings can be missed or false. " +
     "Does not change steering. Low-confidence or stale detections cannot provide warnings."
+  ),
+  "LdwLowSpeed": tr_noop(
+    "Extend the added warnings during active steering assistance to speeds above 2 mph (3.2 km/h). " +
+    "Requires both lane-warning toggles above. No warnings at standstill. " +
+    "Parking areas and intersections can cause false alerts; tight turns may be outside the prediction range."
   ),
   "AlwaysOnDM": tr_noop("Enable driver monitoring even when sunnypilot is not engaged."),
   'RecordFront': tr_noop("Upload data from the driver facing camera and help improve the driver monitoring algorithm."),
@@ -83,6 +89,12 @@ class TogglesLayout(Widget):
         "warning.png",
         False,
       ),
+      "LdwLowSpeed": (
+        lambda: tr("Low-Speed Lane Warnings (Experimental)"),
+        DESCRIPTIONS["LdwLowSpeed"],
+        "warning.png",
+        False,
+      ),
       "AlwaysOnDM": (
         lambda: tr("Always-On Driver Monitoring"),
         DESCRIPTIONS["AlwaysOnDM"],
@@ -119,6 +131,19 @@ class TogglesLayout(Widget):
       icon="speed_limit.png"
     )
 
+    self._ldw_sensitivity_setting = multiple_button_item(
+      lambda: tr("Lane Warning Sensitivity"),
+      lambda: tr("Applies to warnings during active steering assistance. Later: 0.5 s look-ahead / 5 cm margin. " +
+                 "Standard: 0.8 s / 10 cm. Earlier: 1.1 s / 20 cm; may produce more false alerts. " +
+                 "These are prediction settings, not guaranteed warning lead times. " +
+                 "Signal suppression and confidence checks are unchanged. Applies within a second; no reboot."),
+      buttons=[lambda: tr("Later"), lambda: tr("Standard"), lambda: tr("Earlier")],
+      selected_index=sensitivity_index(self._params.get("LdwSensitivity", return_default=True)),
+      button_width=300,
+      callback=self._set_ldw_sensitivity,
+      icon="warning.png",
+    )
+
     self._toggles = {}
     self._locked_toggles = set()
     for param, (title, desc, icon, needs_restart) in self._toggle_defs.items():
@@ -147,6 +172,9 @@ class TogglesLayout(Widget):
         self._locked_toggles.add(param)
 
       self._toggles[param] = toggle
+
+      if param == "LdwLowSpeed":
+        self._toggles["LdwSensitivity"] = self._ldw_sensitivity_setting
 
       # insert longitudinal personality after NDOG toggle
       if param == "DisengageOnAccelerator":
@@ -217,6 +245,9 @@ class TogglesLayout(Widget):
     for param in self._toggle_defs:
       self._toggles[param].action_item.set_state(self._params.get_bool(param))
 
+    self._ldw_sensitivity_setting.action_item.set_selected_button(
+      sensitivity_index(self._params.get("LdwSensitivity", return_default=True)))
+
     # these toggles need restart, block while engaged
     for toggle_def in self._toggle_defs:
       if self._toggle_defs[toggle_def][3] and toggle_def not in self._locked_toggles:
@@ -260,3 +291,6 @@ class TogglesLayout(Widget):
 
   def _set_longitudinal_personality(self, button_index: int):
     self._params.put("LongitudinalPersonality", button_index, block=True)
+
+  def _set_ldw_sensitivity(self, button_index: int):
+    self._params.put("LdwSensitivity", sensitivity_index(button_index), block=True)

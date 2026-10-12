@@ -303,7 +303,7 @@ class AdapterTests(unittest.TestCase):
     self.assertIsNone(ldw.boundary_from_model(NS(), 1))
     self.assertIsNone(ldw.boundary_from_model(make_sm()['modelV2'], 0, True))
 
-  def run_planner(self, fault=False, clock=True, enabled=True):
+  def run_planner(self, fault=False, clock=True, enabled=True, low_speed=False, speed=30, sensitivity=1, curvature=.008):
     # Execute the actual patched main, replacing only external processes and native imports.
     class StopLoop(Exception): pass
     sm, sent, errors, calls, planned = make_sm(), [], [], [], []
@@ -312,6 +312,8 @@ class AdapterTests(unittest.TestCase):
       if fault: raise RuntimeError('injected detector fault')
       return ldw.update_active_ldw(*args, **kwargs)
     sm['selfdriveStateSP'] = NS(buttonsReleaseToggle=0)
+    sm['carState'].vEgo = speed
+    sm['controlsState'].curvature = curvature
     sm.frame, sm.updated = 0, {'modelV2': True}
     def update():
       if sm.frame >= 30: raise StopLoop()
@@ -321,8 +323,11 @@ class AdapterTests(unittest.TestCase):
       sm.logMonoTime = {name: int(now*1e9) for name in sm}
     sm.update = update
     class Params:
-      def get(self, *args, **kwargs): return b''
-      def get_bool(self, key): return enabled and key in ('LdwWhileSteering', 'IsLdwEnabled')
+      def get(self, key, *args, **kwargs):
+        return sensitivity if key == 'LdwSensitivity' else b''
+      def get_bool(self, key):
+        if key == 'LdwLowSpeed': return low_speed and sm.frame >= 10
+        return enabled and key in ('LdwWhileSteering', 'IsLdwEnabled')
     class Planner:
       def __init__(self, *args): self.sla = NS(update_buttons=lambda *a: None)
       def update(self, *args): pass
@@ -339,7 +344,7 @@ class AdapterTests(unittest.TestCase):
                config_realtime_process=lambda *a: None, Priority=NS(CTRL_LOW=1),
                cloudlog=NS(info=lambda *a: None, exception=lambda *a: errors.append(a)), Params=Params, get_gps_location_service=lambda p: 'gpsLocation',
                LaneDepartureWarning=legacy['LaneDepartureWarning'], ActiveLaneDepartureWarning=ldw.ActiveLaneDepartureWarning,
-               update_active_ldw=adapter, Result=ldw.Result, LongitudinalPlanner=Planner,
+               update_active_ldw=adapter, Result=ldw.Result, config_from_settings=ldw.config_from_settings, LongitudinalPlanner=Planner,
                messaging=NS(log_from_bytes=lambda *a: NS(brand='honda'),
                             PubMaster=lambda *a: NS(send=lambda name, msg: sent.append(msg)),
                             SubMaster=lambda *a, **kw: sm,
@@ -378,6 +383,112 @@ class PlannerIsolationTests(unittest.TestCase):
     sent, errors, calls = self.run_planner(enabled=False, fault=True)
     self.assertEqual(len(sent), 30)
     self.assertFalse(errors or calls)
+
+
+class SettingsTests(unittest.TestCase):
+  setUp = BehaviourTests.setUp
+  run_frames = BehaviourTests.run_frames
+  run_planner = AdapterTests.run_planner
+
+  def test_defaults_match_original_config(self):
+    self.assertEqual(ldw.config_from_settings(), ldw.Config())
+
+  def test_invalid_sensitivity_falls_back_to_standard(self):
+    for value in (None, b'2', '2', -1, 3, 999, True, float('nan')):
+      self.assertEqual(ldw.config_from_settings(sensitivity=value), ldw.Config())
+
+  def test_low_speed_on_off_and_standstill(self):
+    for enabled in (False, True):
+      for mph in (0, .5, 2, 2.1, 15, 30, 32):
+        self.detector = ldw.ActiveLaneDepartureWarning(ldw.config_from_settings(enabled))
+        result = self.run_frames(20, speed=mph*.44704, lines=(boundary(-2.8), boundary(.9)))
+        self.assertEqual(any(r.right for r in result), mph > (2 if enabled else 31))
+
+  def test_sensitivity_orders_warning_on_approach(self):
+    first = []
+    for profile in range(3):
+      self.detector = ldw.ActiveLaneDepartureWarning(ldw.config_from_settings(sensitivity=profile))
+      fired = None
+      for i in range(40):
+        offset = 2.0-i*.025
+        if self.run_frames(1, lines=(boundary(-2.8, -.02), boundary(offset, -.02)))[0].right and fired is None:
+          fired = i
+      self.assertIsNotNone(fired)
+      first.append(fired)
+    self.assertGreater(first[0], first[1])
+    self.assertGreater(first[1], first[2])
+
+  def test_tuning_keeps_latch_and_signal_history(self):
+    self.run_frames(80, curvature=.008)
+    self.detector.configure(ldw.config_from_settings(True, 2))
+    self.assertTrue(self.detector.sides[1].latched)
+    self.assertFalse(any(r.right for r in self.run_frames(20, curvature=.008)))
+    self.run_frames(1, left_signal=True)
+    stamp = self.detector.last_signal[:]
+    self.detector.configure(ldw.config_from_settings(False, 0))
+    self.assertEqual(stamp, self.detector.last_signal)
+    self.assertFalse(any(r.right for r in self.run_frames(20, curvature=.008)))
+
+  def test_repeated_same_settings_do_not_reset_confirmation(self):
+    seen = False
+    for _ in range(20):
+      self.detector.configure(ldw.config_from_settings())
+      seen |= self.run_frames(1, curvature=.008)[0].right
+    self.assertTrue(seen)
+
+  def test_planner_picks_up_low_speed_setting_without_restart(self):
+    # A curved trajectory at 25 mph supplies risk; setting changes at frame 10,
+    # the 1-second poll picks it up around frame 21, and the same loop warns.
+    sent, errors, calls = self.run_planner(low_speed=True, speed=25*.44704, curvature=.025)
+    self.assertFalse(errors)
+    self.assertFalse(any(m.driverAssistance.rightLaneDeparture for m in sent[:20]))
+    self.assertTrue(any(m.driverAssistance.rightLaneDeparture for m in sent[20:]))
+
+  def test_new_python_files_parse(self):
+    for file in ('selfdrive/controls/lib/active_ldw.py', 'selfdrive/controls/plannerd.py',
+                 'selfdrive/ui/layouts/settings/toggles.py'):
+      ast.parse((SOURCE/file).read_text())
+
+
+class TunerUITests(unittest.TestCase):
+  def test_controls_construct_and_persist_settings(self):
+    values = {'LdwSensitivity': 99, 'LongitudinalPersonality': 1}
+    class Params:
+      def get(self, key, **kw): return values.get(key)
+      def get_bool(self, key): return bool(values.get(key, False))
+      def put(self, key, value, **kw): values[key] = value
+      def put_bool(self, key, value, **kw): values[key] = value
+    class Widget:
+      def __init__(self): pass
+    class Action:
+      def set_enabled(self, value): self.enabled = value
+      def set_state(self, value): self.state = value
+      def get_state(self): return getattr(self, 'state', False)
+      def set_selected_button(self, value): self.selected_index = value
+    class Item:
+      def __init__(self, title, description, *args, **kw):
+        self.title, self.description = title, description
+        self.action_item = Action()
+        self.callback = kw.get('callback')
+        self.action_item.selected_index = kw.get('selected_index')
+      def set_description(self, value): self.description = value
+      def set_icon(self, value): self.icon = value
+    tree = ast.parse((SOURCE/'selfdrive/ui/layouts/settings/toggles.py').read_text())
+    # Execute description table and actual layout class, stubbing rendering only.
+    tree.body = [n for n in tree.body if isinstance(n, ast.ClassDef) or
+                 isinstance(n, ast.Assign) and any(isinstance(t, ast.Name) and t.id == 'DESCRIPTIONS' for t in n.targets)]
+    env = dict(Params=Params, Widget=Widget, UnknownKeyName=KeyError, sensitivity_index=ldw.sensitivity_index,
+               toggle_item=Item, multiple_button_item=Item, tr=lambda s:s, tr_noop=lambda s:s,
+               Scroller=lambda *a, **k: NS(), ui_state=NS(add_engaged_transition_callback=lambda cb:None))
+    exec(compile(tree, '<settings ui>', 'exec'), env)
+    ui = env['TogglesLayout']()
+    self.assertIn('LdwLowSpeed', ui._toggles)
+    self.assertEqual(ui._ldw_sensitivity_setting.action_item.selected_index, 1)
+    ui._ldw_sensitivity_setting.callback(2)
+    self.assertEqual(values['LdwSensitivity'], 2)
+    ui._toggles['LdwLowSpeed'].callback(True)
+    self.assertTrue(values['LdwLowSpeed'])
+    self.assertNotIn('OnroadCycleRequested', values)
 
 
 if __name__ == '__main__':

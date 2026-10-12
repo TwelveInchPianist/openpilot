@@ -7,7 +7,7 @@ from openpilot.common.params import Params
 from openpilot.common.realtime import Priority, config_realtime_process
 from openpilot.common.swaglog import cloudlog
 from openpilot.selfdrive.controls.lib.ldw import LaneDepartureWarning
-from openpilot.selfdrive.controls.lib.active_ldw import ActiveLaneDepartureWarning, Result, update_active_ldw
+from openpilot.selfdrive.controls.lib.active_ldw import ActiveLaneDepartureWarning, Result, config_from_settings, update_active_ldw
 from openpilot.selfdrive.controls.lib.longitudinal_planner import LongitudinalPlanner
 import cereal.messaging as messaging
 
@@ -52,6 +52,8 @@ def main():
           now = time.monotonic()
           if now >= next_ldw_param_read:
             active_ldw_enabled = params.get_bool("LdwWhileSteering") and params.get_bool("IsLdwEnabled")
+            active_ldw.configure(config_from_settings(params.get_bool("LdwLowSpeed"),
+                                                      params.get("LdwSensitivity", return_default=True)))
             next_ldw_param_read = now + 1.0
           if active_ldw_enabled:
             # Do not silently mix MONOTONIC with BOOTTIME on unsupported hosts.

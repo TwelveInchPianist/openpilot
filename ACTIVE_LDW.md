@@ -19,7 +19,7 @@ The parameter is persistent and included in backups.
 
 ## Validation
 
-44 synthetic tests pass. Two added regression tests reproduced signalled lane-change label-switch alerts and repeated alerts following confidence dropouts on the previous code, and now pass.
+53 synthetic tests pass. Two added regression tests reproduced signalled lane-change label-switch alerts and repeated alerts following confidence dropouts on the previous code, and now pass.
 Tests include the actual planner main with external/native dependencies stubbed, exception injection, absent BOOTTIME, disabled feature, lane-change suppression, confidence hysteresis, latch retention/expiry and source transitions.
 
 From repository root, run:
@@ -32,8 +32,28 @@ The user reported the prior revision's installer completed downloading/installin
 
 ## Remaining limitations
 
-Vehicle half-width is an approximate 1.0 m body envelope, not calibrated tire or full footprint tracking. Prediction assumes constant speed and current estimated curvature over 0.8 seconds. Speed must exceed approximately 31 mph; fresh valid data and calibration are required. Weak or stale detections silently suppress the added warning. Existing higher-priority alerts may supersede it.
+Vehicle half-width is an approximate 1.0 m body envelope, not calibrated tire or full footprint tracking. Prediction assumes constant speed and current estimated curvature over the selected 0.5 / 0.8 / 1.1 second horizon. Speed must exceed 31 mph by default, or 2 mph when Low-Speed Lane Warnings is enabled; fresh valid data and calibration are required. Weak or stale detections silently suppress the added warning. Existing higher-priority alerts may supersede it.
 
 A long data absence or explicit detector reset can rearm while still straddling a boundary. Five-second suppression does not prove an unusually long lane change has finished. Latch retention after a boundary-identity change can suppress a genuinely new event temporarily. Unmarked shoulder crossings are not covered by default. Thresholds, false-alarm rate and warning timing need real-drive evaluation; no guarantee is made of a warning on every departure.
 
 Steering, braking, panda safety and driver monitoring code are unchanged. Successful compilation is not driving validation.
+
+## In-car tuning
+
+Settings > Toggles now includes **Low-Speed Lane Warnings (Experimental)** and **Lane Warning Sensitivity**.
+
+Low speed defaults off. When enabled, the added detector operates strictly above 2 mph (3.2 km/h), still requiring active lateral steering, both LDW master toggles, fresh data, valid calibration, and existing suppression checks. This does not extend stock manual-driving LDW. Tight turns beyond the existing curvature limit remain unavailable.
+
+| Setting | Prediction horizon | Boundary margin |
+| --- | --- | --- |
+| Later | 0.5 s | 5 cm |
+| Standard (default) | 0.8 s | 10 cm |
+| Earlier | 1.1 s | 20 cm |
+
+These are prediction parameters, not guaranteed warning lead times. Earlier can increase false alerts. The 0.15-second confirmation, confidence gates, five-second lane-change suppression, width proxy and disabled road-edge fallback do not change. Longer horizons require correspondingly longer model boundary coverage.
+
+Settings persist and are backed up. The planner polls them every second; changing them does not request a restart. Reconfiguration preserves existing warning latches and signal history and restarts partial confirmation/rearm timers. Malformed sensitivity values fall back to Standard.
+
+Tests cover speed thresholds (including standstill and exactly 2 mph), profile timing order, default equivalence, latch preservation, live planner polling, and actual settings-layout construction/callbacks with rendering dependencies stubbed. Native UI rendering and hardware performance have not been validated here.
+
+The first update introducing these controls requires rebuilding native Params bindings and restarting. Subsequent in-car adjustments do not.
