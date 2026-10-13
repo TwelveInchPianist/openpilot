@@ -61,6 +61,9 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     {"LdwWhileSteering", {PERSISTENT | BACKUP, BOOL, "1"}},
     {"LdwLowSpeed", {PERSISTENT | BACKUP, BOOL, "1"}},
     {"AggressiveFCW", {PERSISTENT | BACKUP, BOOL, "0"}},
+    {"FCWMinConfidence", {PERSISTENT | BACKUP, INT, "75"}},
+    {"FCWResponseDelay", {PERSISTENT | BACKUP, INT, "20"}},
+    {"FCWForecast", {PERSISTENT | BACKUP, INT, "50"}},
     {"LdwSensitivity", {PERSISTENT | BACKUP, INT, "1"}},
     {"IsMetric", {PERSISTENT | BACKUP, BOOL}},
     {"IsOffroad", {CLEAR_ON_MANAGER_START, BOOL}},
@@ -282,3 +285,4 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     {"TorqueParamsOverrideFriction", {PERSISTENT | BACKUP, FLOAT, "0.1"}},
     {"TorqueParamsOverrideLatAccelFactor", {PERSISTENT | BACKUP, FLOAT, "2.5"}},
 };
+

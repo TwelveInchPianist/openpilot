@@ -20,7 +20,7 @@ class DetectorTests(unittest.TestCase):
     self.t += .05
     args = dict(valid=True, urgent=False, speed=25., acceleration=0., gap=25.,
                 lead_speed=15., lead_accel=0., probability=.99, lateral=0.,
-                curvature=0., track=(True, 1))
+                curvature=0., track=(True, 1), path_lateral=0.)
     args.update(kw)
     return self.d.update(self.t, self.t, **args)
 
@@ -49,8 +49,8 @@ class DetectorTests(unittest.TestCase):
     self.assertTrue(any(self.run_frames(gap=45, lead_speed=0)))
 
   def test_invalid_envelopes_suppress(self):
-    for kw in ({'speed':0}, {'speed':5*.44704}, {'probability':.94}, {'lateral':1.2},
-               {'curvature':.005}, {'gap':0}, {'lead_speed':-1}, {'lead_accel':-10},
+    for kw in ({'speed':-1}, {'probability':.74}, {'path_lateral':1.2},
+               {'path_lateral':None}, {'gap':0}, {'lead_speed':-6}, {'lead_accel':-10},
                {'gap':float('nan')}, {'valid':False}, {'acceleration':float('inf')}):
       with self.subTest(kw=kw):
         self.setUp()
@@ -70,9 +70,14 @@ class DetectorTests(unittest.TestCase):
 
   def test_dropouts_and_mode_pause_do_not_rearm(self):
     self.assertTrue(any(self.run_frames()))
-    self.run_frames(220, probability=.5)
+    self.run_frames(20, probability=.5)
     self.d.pause()
     self.assertFalse(any(self.run_frames(100)))
+
+  def test_long_absence_does_not_latch_forever(self):
+    self.assertTrue(any(self.run_frames()))
+    self.run_frames(220, probability=.5)
+    self.assertTrue(any(self.run_frames(30)))
 
   def test_safe_observations_rearm_after_cooldown(self):
     self.assertTrue(any(self.run_frames()))
@@ -85,7 +90,7 @@ class DetectorTests(unittest.TestCase):
 
   def test_repeated_stale_and_reversed_timestamps(self):
     args=dict(valid=True, urgent=False, speed=25, acceleration=0, gap=25,
-              lead_speed=15, lead_accel=0, probability=.99, lateral=0, curvature=0, track=1)
+              lead_speed=15, lead_accel=0, probability=.99, lateral=0, curvature=0, track=1, path_lateral=0)
     for i in range(30):
       self.assertFalse(self.d.update(10+i*.01, 10, **args))
     self.assertFalse(self.d.update(11, 9, **args))
@@ -98,14 +103,16 @@ class ServiceTests(unittest.TestCase):
     self.s=fcw.EarlyFCWService()
     self.enabled=True
     self.errors=[]
-    self.params=NS(get_bool=lambda key:self.enabled)
+    self.values={k: v[3] for k,v in fcw.SETTING_LIMITS.items()}
+    self.params=NS(get_bool=lambda key:self.enabled, get=lambda key, **kw:self.values[key])
     self.cs=NS(canValid=True,standstill=False,gearShifter=4,vEgo=25.,aEgo=0.,brakePressed=False)
     class SM(dict):
       def all_checks(self, services): return self.valid
     self.sm=SM(radarState=NS(leadOne=NS(status=True,dRel=25.,vLead=15.,aLeadK=0.,
                        modelProb=.99,yRel=0.,radar=True,radarTrackId=1),
                        radarErrors=NS(to_dict=lambda:{})),
-               controlsState=NS(curvature=0.),liveCalibration=NS(calStatus=1),modelV2=NS())
+               controlsState=NS(curvature=0.),liveCalibration=NS(calStatus=1),
+               modelV2=NS(position=NS(x=[0.,50.,100.,200.],y=[0.,0.,0.,0.])))
     self.sm.valid=True
     self.t=10.
 
@@ -170,3 +177,4 @@ class ServiceTests(unittest.TestCase):
 
 if __name__=='__main__':
   unittest.main()
+

@@ -1,79 +1,104 @@
-# Experimental in-car FCW tuning
+# Adjustable forward collision advisory
 
-Settings > Toggles > Forward Collision Warning: **Default / Aggressive**.
-Default is selected for unset parameters. It preserves existing urgent FCW.
-Aggressive adds a distinct `Closing quickly / Check the vehicle ahead` advisory,
-with the existing prompt chime and a two-second banner. It does not alter gas,
-brakes, steering, stock FCW thresholds, or the factory Honda safety systems.
-The control is available in the comma 3/3X Python UI, not mici/four or sunnylink.
+This adds an experimental warning only. Existing urgent model/planner FCW,
+steering, braking, cruise behavior and lane-change defaults are unchanged.
+It is not AEB or a parking sensor. A model score is not a measured probability
+of successful detection. Road false-positive/missed-warning rates are unknown.
 
-`AggressiveFCW` is a persistent, backed-up boolean, polled at 1 Hz. Switching
-modes needs no restart after this version has been installed and rebuilt.
-The existing LDW, MADS and lane-change defaults remain unchanged.
+## In-car settings (comma 3/3X)
 
-## Detection and alerting
+Settings > Toggles > Forward Collision Warning > Aggressive enables the extra
+advisory. The existing AggressiveFCW selection is retained (new installs default
+to Default). Three +/- controls below it apply within about one second:
 
-- Requires valid/fresh radarState, modelV2, controlsState, fresh valid CAN car
-  state, calibrated camera, drive gear, and speed strictly above 5 mph.
-- Uses primary lead selection from the existing radar/vision association. Lead
-  probability must be at least 0.95, lateral offset at most 0.9 m, and the
-  estimated constant-curvature lateral displacement at lead distance at most
-  0.5 m. This deliberately restricts the advisory to nearly straight approaches.
-- Requires 0.6 s track/geometry continuity and 0.3 s continuous risk, on unique
-  radar messages with gaps no greater than 0.2 s. Large range/speed jumps and
-  radar track-ID changes restart confirmation. Vision-only identity is inferred
-  from continuity, not a guaranteed persistent object ID.
-- Simulates four seconds in 0.1 s steps, holding estimated lead acceleration
-  constant and preventing either vehicle reversing as it stops. Risk requires
-  predicted separation below 3 m both with current measured ego acceleration
-  and with a hypothetical response after 1.2 s braking at 2.5 m/s^2 (or stronger
-  existing braking). Closing speed must exceed 2 m/s or lead deceleration exceed
-  1 m/s^2. These are unvalidated design values, not guaranteed reaction times.
-- Brake-pedal contact and turn signals do not themselves suppress the advisory.
-  Sufficient measured braking can remove the projected conflict. No engagement
-  gate is added: manual and assisted driving use the same detector while onroad
-  processes run. Dashcam/passive mode is excluded by existing selfdrived logic.
-- One advisory per episode. Rearming requires two seconds of continuously valid
-  observations predicting at least 6 m separation with current acceleration.
-  Invalid data, mode switches and lost leads do not rearm. There is also a ten-
-  second minimum interval. This can suppress a new advisory after a different
-  threat; existing urgent FCW remains independent. Urgent FCW blocks the new
-  event and latches/cools down the advisory. Higher-priority alerts can supersede
-  the advisory; no guarantee is made of its presentation or chime.
-- Runtime faults log once and disable the new service until selfdrived restarts.
-  Source/import/build failures are not covered by that runtime containment.
+| Setting | Default | Range | Increment |
+| --- | --- | --- | --- |
+| Lead confidence score | 75% | 55-95% | 5 percentage points |
+| Assumed response delay | 2.0 s | 0.4-4.0 s | 0.2 s |
+| Forecast horizon | 5.0 s | 2.0-8.0 s | 0.5 s |
 
-## Limitations
+The parameters FCWMinConfidence, FCWResponseDelay and FCWForecast are persistent
+and backed up. Times are stored in integer tenths of a second. Missing/malformed
+values use defaults; out-of-range values are bounded and snapped to the grid.
+The 55% floor is above radard's >50% ordinary lead-selection threshold. The 75%
+default is an engineering choice, not a validated safe threshold. Settings
+changes restart confirmation without immediately rearming an existing episode.
 
-This is an advisory experiment, not AEB and not a validated collision-warning
-system. There is no additional object detector. It can miss stationary objects,
-cut-ins, curves, low-confidence leads, and encounters during latch/cooldown.
-Range is not a calibrated bumper-to-bumper envelope. Constant acceleration can
-overpredict sustained lead braking and underpredict newly developing braking.
-The straight-path check is a restrictive approximation, not full swept-footprint
-collision checking. Sensor/model latency and confirmation delay reduce usable
-warning time. No grip, road-grade, load, or human-response calibration is claimed.
-Aggressive does not guarantee earlier warning than either stock FCW path.
+No new comma four/mici or sunnylink editor is included in this 3X-targeted patch.
 
-## Validation and installation
+## Standstill and creep
 
-77 synthetic tests pass, including the 58 existing LDW tests (with added FCW UI
-callback assertions), 19 advisory/adapter/integration tests, fault injection,
-tracking interruptions, braking, repeated messages, episode rearming, and the
-actual selfdrived advisory hook with external dependencies stubbed.
+The advisory runs in Drive with assistance engaged or disengaged, including
+zero speed; there is no minimum speed or standstill exclusion. Park, Neutral
+and Reverse remain excluded. Two motionless vehicles do not trigger an alarm.
+A closing lead (including an observed reversing lead), or initial forward
+acceleration toward a close lead, can trigger. It does not detect brake release
+itself or hold the brakes. At low speed it requires >0.15 m/s closing speed or
+other qualifying acceleration evidence to reject small speed-estimation noise.
+
+Below 5 mph the projected-clearance threshold is 0.6 m instead of 3 m, so being
+stopped close to another vehicle does not itself cause a warning. Above that
+speed the existing >2 m/s closing / hard lead deceleration qualification remains.
+Stable tracking (0.6 s), risk confirmation (0.3 s), fresh data and sufficient
+confidence are still required. Those delays can consume much of a tiny gap.
+
+The low-speed radar override in radard may publish modelProb=0. The advisory
+can recover camera support only by matching a model lead in distance, lateral
+position and speed. It does not bypass the confidence selector for radar-only
+objects. Nidec near-field limits and radard's >0.75 m low-speed override gate
+remain unchanged. Missing/suppressed objects cannot produce a warning.
+
+## Curves
+
+The old |curvature|*distance^2/2 <= 0.5 m exclusion is removed. The lead is compared
+with the model path at the lead's longitudinal coordinate, using the same 1.52 m
+radar-to-camera offset as radard and reversing the radar/model lateral sign.
+Perpendicular offset must be <=1 m. Ordinary curved paths can now qualify.
+It is still a lead-centre gate, not vehicle-width/partial-overlap detection.
+
+The model path must contain a finite, forward-monotonic segment at that distance;
+there is no long-distance extrapolation. Missing close-range geometry can use
+a bounded constant-curvature fallback within 15 m (helpful at standstill).
+The predicted path is not a guarantee of driver intent, especially during lane
+changes. Adjacent-lane false positives and delayed/missed curve alerts require
+recorded-drive evaluation. The advisory still examines only leadOne.
+
+## Forecast and repeat warnings
+
+Both the current-motion and hypothetical-response forecasts must fall below
+the clearance threshold. The hypothetical response applies 2.5 m/s^2 braking
+after the selected delay, or stronger observed braking while it is extrapolated.
+Observed accelerations are extrapolated for at most 2 s, then coasting is assumed
+except hypothetical braking continues to a stop. This bounds eight-second
+acceleration errors; it can underestimate sustained acceleration/deceleration.
+Forward leads are not extrapolated into reverse; observed reversing leads can
+continue reversing. This is not a road-friction or driver-response model.
+
+The horizon is not a warning lead-time guarantee. The detector only accepts
+0.3-200 m lead distances and valid geometry; an 8 s horizon does not extend
+sensor range. Higher horizons/delays and lower confidence can increase false
+positives. There is a hard upper ego-speed bound of 60 m/s for input sanity.
+
+One pulse per risk episode, 10 s cooldown at normal speed, 3 s for creep. Two
+seconds of safe observations rearm; holding a steady stopped gap rearms creep.
+After >=3 s without eligible observations and expiration of the 10 s cooldown,
+the detector can rearm, but must earn fresh confirmation. This avoids an
+indefinite latch after losing a lead; it can repeat an alert after long dropouts.
+Urgent stock FCW preempts the advisory. Exceptions disable only the extra
+advisory until process restart and are logged.
+
+## Verification
+
+Run from repository root:
 
 ```sh
-python3 -m unittest discover -s tests -p 'test_*fcw.py' -v
-python3 -m unittest discover -s tests -p test_active_ldw.py -v
+python -m unittest discover -s tests -p 'test*fcw*.py' -v
 ```
 
-No native device build, native UI rendering, recorded-drive replay or road test
-has been performed here. False positives per driving hour, warning lead time,
-and missed-conflict rates have not been measured. Default mode remains the
-initial setting until the user selects Aggressive.
-
-The first install requires a full device rebuild and restart because a Params
-key and appended custom event enum have been added. Remove the `prebuilt`
-marker before rebooting after a clean fast-forward update while parked/offroad.
-No new cereal field is added to existing messages and existing enum ordinals
-are unchanged; the new event is appended at OnroadEventSP.EventName @24.
+Tests exercise stopped queues, physically closing creep, initial acceleration,
+reversing leads, braking, repeated episodes, confidence thresholds, live setting
+updates, stale data, left/right curved paths, adjacent lanes, missing geometry,
+low-speed camera/radar matching, bounds, actual UI configuration and the actual
+selfdrived advisory hook. The tests run without native openpilot dependencies.
+They do not validate camera perception, physical radar performance, native UI
+rendering, device builds or warning performance on a recorded/real drive.

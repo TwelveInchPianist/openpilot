@@ -1,6 +1,8 @@
 from cereal import log
 from openpilot.common.params import Params, UnknownKeyName
 from openpilot.selfdrive.controls.lib.active_ldw import sensitivity_index
+from openpilot.selfdrive.controls.lib.early_fcw import SETTING_LIMITS, setting_value
+from openpilot.system.ui.sunnypilot.widgets.list_view import option_item_sp
 from openpilot.system.ui.widgets import Widget
 from openpilot.system.ui.widgets.list_view import multiple_button_item, toggle_item
 from openpilot.system.ui.widgets.scroller_tici import Scroller
@@ -146,7 +148,8 @@ class TogglesLayout(Widget):
 
     self._fcw_sensitivity_setting = multiple_button_item(
       lambda: tr("Forward Collision Warning"),
-      lambda: tr("Default preserves existing FCW. Aggressive adds an experimental earlier chime for stable leads on nearly straight roads above 5 mph. " +
+      lambda: tr("Default preserves existing FCW. Aggressive adds adjustable warnings in Drive, including stopped and creeping traffic, with assistance on or off. " +
+                 "A stopped car with no closing motion does not continuously alarm. Requires a supported detected lead; this is not a parking sensor. " +
                  "No braking changes. May miss threats or give false alerts; warning timing is unvalidated. " +
                  "Existing urgent FCW remains enabled in both modes. Applies within a second; no reboot."),
       buttons=[lambda: tr("Default"), lambda: tr("Aggressive")],
@@ -155,6 +158,27 @@ class TogglesLayout(Widget):
       callback=self._set_fcw_sensitivity,
       icon="warning.png",
     )
+
+    self._fcw_tuning = {}
+    tuning_labels = {
+      "FCWMinConfidence": ("FCW Lead Confidence", "Lower admits less-certain leads and may increase false alerts. "
+                           "55-95 in 5-point steps; default 75. This is a model score, not detection reliability."),
+      "FCWResponseDelay": ("FCW Response Delay", "Assumed delay before braking. Higher can warn earlier. "
+                           "0.4-4.0 seconds in 0.2-second steps; default 2.0 seconds."),
+      "FCWForecast": ("FCW Forecast", "Prediction horizon, not guaranteed warning time. "
+                      "2-8 seconds in 0.5-second steps; default 5 seconds. Longer forecasts may increase false alerts."),
+    }
+    for key, (low, high, step, default) in SETTING_LIMITS.items():
+      # Repair malformed external values before the numeric widget reads them.
+      value = setting_value(key, self._params.get(key, return_default=True))
+      self._params.put(key, value, block=True)
+      title, description = tuning_labels[key]
+      self._fcw_tuning[key] = option_item_sp(
+        title=lambda t=title: tr(t), param=key, min_value=low, max_value=high,
+        value_change_step=step, description=lambda d=description: tr(d) + " " + tr("Applies within a second; no reboot."),
+        enabled=lambda: self._params.get_bool("AggressiveFCW"), label_width=210,
+        label_callback=(lambda v: f"{v}%") if key == "FCWMinConfidence" else (lambda v: f"{v / 10:.1f} s"),
+      )
 
     self._toggles = {}
     self._locked_toggles = set()
@@ -188,6 +212,7 @@ class TogglesLayout(Widget):
       if param == "LdwLowSpeed":
         self._toggles["LdwSensitivity"] = self._ldw_sensitivity_setting
         self._toggles["AggressiveFCW"] = self._fcw_sensitivity_setting
+        self._toggles.update(self._fcw_tuning)
 
       # insert longitudinal personality after NDOG toggle
       if param == "DisengageOnAccelerator":
@@ -259,6 +284,8 @@ class TogglesLayout(Widget):
       self._toggles[param].action_item.set_state(self._params.get_bool(param))
 
     self._fcw_sensitivity_setting.action_item.set_selected_button(int(self._params.get_bool("AggressiveFCW")))
+    for key, item in self._fcw_tuning.items():
+      item.action_item.current_value = setting_value(key, self._params.get(key, return_default=True))
     self._ldw_sensitivity_setting.action_item.set_selected_button(
       sensitivity_index(self._params.get("LdwSensitivity", return_default=True)))
 
@@ -311,3 +338,4 @@ class TogglesLayout(Widget):
 
   def _set_fcw_sensitivity(self, button_index: int):
     self._params.put_bool("AggressiveFCW", button_index == 1, block=True)
+
