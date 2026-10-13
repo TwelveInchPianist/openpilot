@@ -165,10 +165,12 @@ class TogglesLayout(Widget):
     tuning_labels = {
       "FCWMinConfidence": ("FCW Lead Confidence", "Lower admits less-certain leads and may increase false alerts. " +
                            "55-95 in 5-point steps; default 75. This is a model score, not detection reliability."),
-      "FCWResponseDelay": ("FCW Response Delay", "Assumed delay before braking. Higher can warn earlier. " +
+      "FCWResponseDelay": ("FCW Response Delay", "Assumed delay before braking at 10 mph and above. Higher can warn earlier. " +
                            "0.4-4.0 seconds in 0.2-second steps; default 2.0 seconds."),
       "FCWForecast": ("FCW Forecast", "Prediction horizon, not guaranteed warning time. " +
                       "2-8 seconds in 0.5-second steps; default 5 seconds. Longer forecasts may increase false alerts."),
+      "FCWCreepResponseDelay": ("FCW Creep Response Delay", "Assumed delay at 0-5 mph; blends to normal delay by 10 mph. " +
+                                  "0.4-2.0 seconds in 0.2-second steps; default 0.8. Shorter delays warn later and may miss unnoticed creep."),
     }
     for key, (low, high, step, _default) in SETTING_LIMITS.items():
       # Repair malformed external values before the numeric widget reads them.
