@@ -64,6 +64,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     {"FCWMinConfidence", {PERSISTENT | BACKUP, INT, "75"}},
     {"FCWResponseDelay", {PERSISTENT | BACKUP, INT, "20"}},
     {"FCWForecast", {PERSISTENT | BACKUP, INT, "50"}},
+  {"FCWCreepResponseDelay", {PERSISTENT | BACKUP, INT, "8"}},
     {"LdwSensitivity", {PERSISTENT | BACKUP, INT, "1"}},
     {"IsMetric", {PERSISTENT | BACKUP, BOOL}},
     {"IsOffroad", {CLEAR_ON_MANAGER_START, BOOL}},

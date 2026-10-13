@@ -11,6 +11,7 @@ SETTING_LIMITS = {
   "FCWMinConfidence": (55, 95, 5, 75),
   "FCWResponseDelay": (4, 40, 2, 20),  # tenths of a second
   "FCWForecast": (20, 80, 5, 50),     # tenths of a second
+  "FCWCreepResponseDelay": (4, 20, 2, 8),  # tenths; independently adjustable
 }
 RADAR_TO_CAMERA = 1.52  # matches radard's lead coordinate conversion
 
@@ -27,18 +28,25 @@ def setting_value(key, value):
 
 
 class FCWSettings:
-  def __init__(self, confidence=75, response_delay=20, forecast=50):
+  def __init__(self, confidence=75, response_delay=20, forecast=50, creep_response_delay=8):
     self.probability = setting_value("FCWMinConfidence", confidence) / 100.
     self.response_delay = setting_value("FCWResponseDelay", response_delay) / 10.
     self.forecast = setting_value("FCWForecast", forecast) / 10.
+    self.creep_response_delay = setting_value("FCWCreepResponseDelay", creep_response_delay) / 10.
+
+  def delay_at_speed(self, speed):
+    # Avoid a response-delay step at the creep boundary: blend over 5-10 mph.
+    blend = max(0., min(1., (speed / .44704 - 5.) / 5.))
+    return self.creep_response_delay + blend * (self.response_delay - self.creep_response_delay)
 
 
 def minimum_gap(gap, ego_speed, ego_accel, lead_speed, lead_accel,
-                comfortable_response, response_delay=2., horizon=5.):
+                comfortable_response, response_delay=2., horizon=5., *, ego_braking=0., lead_braking=0.):
   """Integrate signed relative motion; don't invent indefinite acceleration.
 
-Observed acceleration is extrapolated for at most two seconds. Thereafter
-vehicles coast, except hypothetical response braking continues to a stop.
+Observed acceleration is extrapolated for two seconds. Thereafter only
+confirmed braking tails and hypothetical response braking persist to a stop.
+Braking tails are nonpositive, bounded by the current observed deceleration.
 A forward/stationary lead is never extrapolated into reverse. An observed
 reversing lead may continue reversing. No claim of friction/driver calibration.
 """
@@ -46,11 +54,12 @@ reversing lead may continue reversing. No claim of friction/driver calibration.
   reversing = lead_speed < 0
   for step in range(round(horizon * 10)):
     t = step * .1
-    a = ego_accel if t < 2. else 0.
+    a = ego_accel if t < 2. else min(0., max(ego_accel, ego_braking))
     if comfortable_response and t + 1e-9 >= response_delay:
       a = min(a, -2.5)
     next_ego = max(0., ego_speed + a * .1)
-    next_lead = lead_speed + (lead_accel if t < 2. else 0.) * .1
+    lead_a = lead_accel if t < 2. else min(0., max(lead_accel, lead_braking))
+    next_lead = lead_speed + lead_a * .1
     next_lead = min(0., next_lead) if reversing else max(0., next_lead)
     gap += ((lead_speed + next_lead) - (ego_speed + next_ego)) * .05
     closest = min(closest, gap)
@@ -121,8 +130,10 @@ class EarlyForwardWarning:
     self.latched = False
     self.last_fire = -math.inf
     self.pulse_until = -math.inf
+    self.braking_history = []
 
   def pause(self):
+    self.braking_history.clear()
     self.previous = None
     self.stable_since = self.risk_since = self.clear_since = None
     self.pulse_until = -math.inf
@@ -174,14 +185,25 @@ class EarlyForwardWarning:
       self.stable_since = stamp
     self.previous = (track, gap, lead_speed, speed)
 
+    # Use the weakest deceleration over a recent continuous window. A brief
+    # spike cannot earn a long braking tail; releasing brakes removes it now.
+    self.braking_history.append((stamp, acceleration, lead_accel))
+    self.braking_history = [row for row in self.braking_history if stamp - row[0] <= .5]
+    confirmed = stamp - self.braking_history[0][0] >= .3
+    ego_braking = max(row[1] for row in self.braking_history) if confirmed else 0.
+    lead_braking = max(row[2] for row in self.braking_history) if confirmed else 0.
+    ego_braking = ego_braking if ego_braking < -1. else 0.
+    lead_braking = lead_braking if lead_braking < -1. else 0.
+
     closing = speed - lead_speed
     low_speed = speed < 5 * .44704
     # Near a stopped lead, a 3 m buffer would beep during ordinary close queues.
     clearance = .6 if low_speed else 3.
+    response_delay = settings.delay_at_speed(speed)
     actual_gap = minimum_gap(gap, speed, acceleration, lead_speed, lead_accel, False,
-                             settings.response_delay, settings.forecast)
+                             response_delay, settings.forecast, ego_braking=ego_braking, lead_braking=lead_braking)
     response_gap = minimum_gap(gap, speed, acceleration, lead_speed, lead_accel, True,
-                               settings.response_delay, settings.forecast)
+                               response_delay, settings.forecast, ego_braking=ego_braking, lead_braking=lead_braking)
     moving_risk = closing > (.15 if low_speed else 2.) or lead_accel < -1 or (low_speed and acceleration > .2)
     risk = moving_risk and actual_gap < clearance and response_gap < clearance
     if not risk:

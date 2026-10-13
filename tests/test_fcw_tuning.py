@@ -76,7 +76,7 @@ class TestTuningTests:
     obj = NS(_params=params)
     env = dict(self=obj, SETTING_LIMITS=fcw.SETTING_LIMITS, setting_value=fcw.setting_value, tr=lambda s: s, option_item_sp=lambda **kw: NS(**kw))
     exec(compile(ast.Module(body=init.body[first:last], type_ignores=[]), '<actual UI>', 'exec'), env)
-    assert len(obj._fcw_tuning) == 3
+    assert len(obj._fcw_tuning) == 4
     for k, w in obj._fcw_tuning.items():
       lo, hi, step, default = fcw.SETTING_LIMITS[k]
       assert (w.min_value, w.max_value, w.value_change_step) == (lo, hi, step)
@@ -103,7 +103,7 @@ class TestAllSpeedTests:
     assert any(self.run_frames(30, speed=0, lead_speed=-0.5, gap=1.0))
 
   def test_zero_speed_initial_acceleration(self):
-    assert any(self.run_frames(30, speed=0, acceleration=0.5, lead_speed=0, gap=1.0))
+    assert any(self.run_frames(30, speed=0, acceleration=0.5, lead_speed=0, gap=0.75))
 
   def test_tiny_closing_noise_is_silent(self):
     assert not any(self.run_frames(100, speed=0.05, lead_speed=0, gap=1.0))
@@ -119,9 +119,9 @@ class TestAllSpeedTests:
     assert any(self.run_frames(probability=0.55, settings=fcw.FCWSettings(confidence=55)))
 
   def test_second_creep_episode_after_stopped_interval(self):
-    assert any(self.run_frames(30, speed=0.5, lead_speed=0, gap=1.0))
+    assert any(self.run_frames(30, speed=0.5, lead_speed=0, gap=0.9))
     self.run_frames(80, speed=0, lead_speed=0, gap=1.0)
-    assert any(self.run_frames(30, speed=0.5, lead_speed=0, gap=1.0))
+    assert any(self.run_frames(30, speed=0.5, lead_speed=0, gap=0.9))
 
   def test_curve_gate_uses_path_instead_of_raw_yrel(self):
     assert any(self.run_frames(gap=60, lead_speed=0, lateral=-4, curvature=0.002, path_lateral=0))
@@ -150,7 +150,7 @@ class TestFullServiceTests:
     self.cs.vEgo = 0.5
     lead = self.sm['radarState'].leadOne
     lead.modelProb = 0.0
-    lead.dRel = 1.0
+    lead.dRel = 0.9
     lead.vLead = 0.0
     self.sm['modelV2'].leadsV3 = [NS(prob=0.8, x=[2.52], y=[0.0], v=[0.0])]
     frames = [self.frame() for _ in range(30)]

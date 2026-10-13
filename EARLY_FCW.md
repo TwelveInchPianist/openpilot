@@ -9,15 +9,17 @@ of successful detection. Road false-positive/missed-warning rates are unknown.
 
 Settings > Toggles > Forward Collision Warning > Aggressive enables the extra
 advisory. The existing AggressiveFCW selection is retained (new installs default
-to Default). Three +/- controls below it apply within about one second:
+to Default). Four +/- controls below it apply within about one second:
 
 | Setting | Default | Range | Increment |
 | --- | --- | --- | --- |
 | Lead confidence score | 75% | 55-95% | 5 percentage points |
-| Assumed response delay | 2.0 s | 0.4-4.0 s | 0.2 s |
+| Normal response delay (10 mph+) | 2.0 s | 0.4-4.0 s | 0.2 s |
+| Creep response delay (0-5 mph) | 0.8 s | 0.4-2.0 s | 0.2 s |
 | Forecast horizon | 5.0 s | 2.0-8.0 s | 0.5 s |
 
-The parameters FCWMinConfidence, FCWResponseDelay and FCWForecast are persistent
+The parameters FCWMinConfidence, FCWResponseDelay, FCWForecast and
+FCWCreepResponseDelay are persistent
 and backed up. Times are stored in integer tenths of a second. Missing/malformed
 values use defaults; out-of-range values are bounded and snapped to the grid.
 The 55% floor is above radard's >50% ordinary lead-selection threshold. The 75%
@@ -35,6 +37,12 @@ A closing lead (including an observed reversing lead), or initial forward
 acceleration toward a close lead, can trigger. It does not detect brake release
 itself or hold the brakes. At low speed it requires >0.15 m/s closing speed or
 other qualifying acceleration evidence to reject small speed-estimation noise.
+
+Creep uses an independent response delay, default 0.8 s, blended linearly to
+the normal response delay between 5 and 10 mph. The normal default stays 2 s.
+A shorter creep delay reduces nuisance but assumes faster driver response and
+therefore warns later, including during unnoticed brake-release creeping.
+It does not distinguish intentional from accidental creeping.
 
 Below 5 mph the projected-clearance threshold is 0.6 m instead of 3 m, so being
 stopped close to another vehicle does not itself cause a warning. Above that
@@ -68,9 +76,19 @@ recorded-drive evaluation. The advisory still examines only leadOne.
 Both the current-motion and hypothetical-response forecasts must fall below
 the clearance threshold. The hypothetical response applies 2.5 m/s^2 braking
 after the selected delay, or stronger observed braking while it is extrapolated.
-Observed accelerations are extrapolated for at most 2 s, then coasting is assumed
-except hypothetical braking continues to a stop. This bounds eight-second
-acceleration errors; it can underestimate sustained acceleration/deceleration.
+Positive acceleration and unconfirmed deceleration are extrapolated for at most
+2 s. Sustained braking below -1 m/s^2 earns a braking tail after at least 0.3 s
+of continuous eligible observations, using the weakest braking in the most
+recent 0.5 s. This is applied independently to ego and lead: ego is no longer
+assumed to release adequate brakes after two seconds, and a consistently
+braking lead can be projected to a stop. The tail never exceeds current braking.
+Brake release removes credit immediately; gaps, track changes and invalid input
+reset its evidence. No suppression is based on the brake-pedal switch alone.
+The response trajectory uses at least 2.5 m/s^2 hypothetical braking after the
+selected delay, while the current-motion trajectory does not invent braking.
+These thresholds are engineering choices, not calibrated uncertainty bounds.
+A changing deceleration estimate can still cause late or nuisance warnings;
+short lead-braking observations still use the original two-second forecast.
 Forward leads are not extrapolated into reverse; observed reversing leads can
 continue reversing. This is not a road-friction or driver-response model.
 
@@ -92,7 +110,7 @@ advisory until process restart and are logged.
 Run from repository root:
 
 ```sh
-python -m pytest tests/test_early_fcw.py tests/test_fcw_tuning.py
+python -m pytest tests/test_early_fcw.py tests/test_fcw_tuning.py tests/test_fcw_braking.py
 ```
 
 Tests exercise stopped queues, physically closing creep, initial acceleration,
@@ -102,3 +120,8 @@ low-speed camera/radar matching, bounds, actual UI configuration and the actual
 selfdrived advisory hook. The tests run without native openpilot dependencies.
 They do not validate camera perception, physical radar performance, native UI
 rendering, device builds or warning performance on a recorded/real drive.
+
+Braking regressions integrate actual speeds and gaps through adequate and
+inadequate stops, brake release, sustained lead braking, intentional creep
+and unattended creep. They also verify transient/reset behavior and live
+creep settings. Passing these does not measure road false-positive rates.
