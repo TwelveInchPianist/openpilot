@@ -2,7 +2,7 @@
 
 Coordinates follow modelV2/controlsState: x forward, y and curvature right-positive.
 The envelope is a configurable body-width proxy, not calibrated tire tracking.
-All distances are metres, speeds m/s, times monotonic seconds, curvature 1/metre.
+All distances are meters, speeds m/s, times monotonic seconds, curvature 1/meter.
 """
 from bisect import bisect_right
 from dataclasses import dataclass
@@ -132,7 +132,7 @@ class ActiveLaneDepartureWarning:
       return False
     if not all(math.isfinite(v) for v in (*b.x, *b.y, b.probability, b.std)):
       return False
-    if b.x[0] > 0 or b.x[0] < -5 or any(v <= u for u, v in zip(b.x, b.x[1:])):
+    if b.x[0] > 0 or b.x[0] < -5 or any(v <= u for u, v in zip(b.x, b.x[1:], strict=False)):
       return False
     if not 0 <= b.probability <= 1 or b.std < 0:
       return False
@@ -296,3 +296,4 @@ def update_active_ldw(detector, sm, now, enabled, calibrated_status, camera_now=
                          left_signal=cs.leftBlinker, right_signal=cs.rightBlinker,
                          lane_change_active=model.meta.laneChangeState != 0,
                          enabled=enabled, lateral_active=cc.latActive, valid=valid)
+

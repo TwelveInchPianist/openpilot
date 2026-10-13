@@ -19,13 +19,13 @@ The parameter is persistent and included in backups.
 
 ## Validation
 
-58 synthetic tests pass. Two added regression tests reproduced signalled lane-change label-switch alerts and repeated alerts following confidence dropouts on the previous code, and now pass.
+58 synthetic tests pass. Two added regression tests reproduced signaled lane-change label-switch alerts and repeated alerts following confidence dropouts on the previous code, and now pass.
 Tests include the actual planner main with external/native dependencies stubbed, exception injection, absent BOOTTIME, disabled feature, lane-change suppression, confidence hysteresis, latch retention/expiry and source transitions.
 
 From repository root, run:
 
 ```sh
-python3 -m unittest discover -s tests -p test_active_ldw.py -v
+python3 -m pytest tests/test_active_ldw.py
 ```
 
 The user reported the prior revision's installer completed downloading/installing. This revision has not been natively built or installed here. No recorded-drive replay or road validation has occurred. There is no prebuilt marker; source installation requires a device build.
@@ -88,3 +88,4 @@ python3 -c 'from openpilot.common.params import Params; Params().put("AutoLaneCh
 ```
 
 The three LDW switches still default on. Ordinary lane centering is unchanged.
+
