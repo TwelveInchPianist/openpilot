@@ -59,7 +59,7 @@ reversing lead may continue reversing. No claim of friction/driver calibration.
 
 
 def path_offset(gap, lateral, curvature, path_x=(), path_y=()):
-  """Signed perpendicular lead offset from the model path, in metres.
+  """Signed perpendicular lead offset from the model path, in meters.
 
 Model x/y: camera reference, right positive. Radar lead: front reference,
 left positive. Never extrapolate the model path. For close creep encounters
@@ -70,7 +70,7 @@ does not extend to the lead. Long-range missing paths disable this advisory.
     return None
   x = gap + RADAR_TO_CAMERA
   if len(path_x) == len(path_y) and 2 <= len(path_x) <= 100:
-    if all(math.isfinite(v) for v in (*path_x, *path_y)) and all(b > a for a, b in zip(path_x, path_x[1:])):
+    if all(math.isfinite(v) for v in (*path_x, *path_y)) and all(b > a for a, b in zip(path_x, path_x[1:], strict=False)):
       for i in range(1, len(path_x)):
         if path_x[i-1] <= x <= path_x[i]:
           dx = path_x[i] - path_x[i-1]

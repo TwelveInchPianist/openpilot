@@ -92,7 +92,7 @@ advisory until process restart and are logged.
 Run from repository root:
 
 ```sh
-python -m unittest discover -s tests -p 'test*fcw*.py' -v
+python -m pytest tests/test_early_fcw.py tests/test_fcw_tuning.py
 ```
 
 Tests exercise stopped queues, physically closing creep, initial acceleration,

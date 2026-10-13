@@ -32,7 +32,8 @@ DESCRIPTIONS = {
   ),
   "IsLdwEnabled": tr_noop(
     "Receive alerts to steer back into the lane when your vehicle drifts over a detected lane line " +
-    "without a turn signal activated. Stock warnings operate above 31 mph (50 km/h); enable Predictive Lane Warnings and Low-Speed Lane Warnings below for coverage above 2 mph."
+    "without a turn signal activated. Stock warnings operate above 31 mph (50 km/h); " +
+    "enable Predictive Lane Warnings and Low-Speed Lane Warnings below for coverage above 2 mph."
   ),
   "LdwWhileSteering": tr_noop(
     "Experimental audible departure warnings with steering assistance on or off. Normally above 31 mph; the low-speed option lowers this to 2 mph. " +
@@ -148,7 +149,8 @@ class TogglesLayout(Widget):
 
     self._fcw_sensitivity_setting = multiple_button_item(
       lambda: tr("Forward Collision Warning"),
-      lambda: tr("Default preserves existing FCW. Aggressive adds adjustable warnings in Drive, including stopped and creeping traffic, with assistance on or off. " +
+      lambda: tr("Default preserves existing FCW. Aggressive adds adjustable warnings in Drive, " +
+                 "including stopped and creeping traffic, with assistance on or off. " +
                  "A stopped car with no closing motion does not continuously alarm. Requires a supported detected lead; this is not a parking sensor. " +
                  "No braking changes. May miss threats or give false alerts; warning timing is unvalidated. " +
                  "Existing urgent FCW remains enabled in both modes. Applies within a second; no reboot."),
@@ -161,14 +163,14 @@ class TogglesLayout(Widget):
 
     self._fcw_tuning = {}
     tuning_labels = {
-      "FCWMinConfidence": ("FCW Lead Confidence", "Lower admits less-certain leads and may increase false alerts. "
+      "FCWMinConfidence": ("FCW Lead Confidence", "Lower admits less-certain leads and may increase false alerts. " +
                            "55-95 in 5-point steps; default 75. This is a model score, not detection reliability."),
-      "FCWResponseDelay": ("FCW Response Delay", "Assumed delay before braking. Higher can warn earlier. "
+      "FCWResponseDelay": ("FCW Response Delay", "Assumed delay before braking. Higher can warn earlier. " +
                            "0.4-4.0 seconds in 0.2-second steps; default 2.0 seconds."),
-      "FCWForecast": ("FCW Forecast", "Prediction horizon, not guaranteed warning time. "
+      "FCWForecast": ("FCW Forecast", "Prediction horizon, not guaranteed warning time. " +
                       "2-8 seconds in 0.5-second steps; default 5 seconds. Longer forecasts may increase false alerts."),
     }
-    for key, (low, high, step, default) in SETTING_LIMITS.items():
+    for key, (low, high, step, _default) in SETTING_LIMITS.items():
       # Repair malformed external values before the numeric widget reads them.
       value = setting_value(key, self._params.get(key, return_default=True))
       self._params.put(key, value, block=True)
